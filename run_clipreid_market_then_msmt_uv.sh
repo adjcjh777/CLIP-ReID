@@ -9,6 +9,11 @@ DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_ROOT="/root/autodl-tmp/CLIP_REID/OUTPUT"
 CONFIG_FILE="configs/person/vit_clipreid.yml"
 RUN_STAMP=$(date +"%Y%m%d_%H%M%S")
+STAGE1_BATCH=256
+STAGE2_BATCH=256
+TRAIN_SIZE="[384, 128]"
+TEST_SIZE="[384, 128]"
+TEST_BATCH=256
 
 echo "[INFO] Workdir: $(pwd)"
 uv run python -V
@@ -34,6 +39,11 @@ run_dataset () {
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     OUTPUT_DIR ${OUTPUT_DIR} \
+    SOLVER.STAGE1.IMS_PER_BATCH ${STAGE1_BATCH} \
+    SOLVER.STAGE2.IMS_PER_BATCH ${STAGE2_BATCH} \
+    INPUT.SIZE_TRAIN "${TRAIN_SIZE}" \
+    INPUT.SIZE_TEST "${TEST_SIZE}" \
+    TEST.IMS_PER_BATCH ${TEST_BATCH} \
     WANDB.ENABLED True \
     WANDB.PROJECT clip-reid \
     2>&1 | tee ${OUTPUT_DIR}/train_${RUN_STAMP}.log
@@ -56,6 +66,8 @@ run_dataset () {
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     OUTPUT_DIR ${OUTPUT_DIR} \
+    INPUT.SIZE_TEST "${TEST_SIZE}" \
+    TEST.IMS_PER_BATCH ${TEST_BATCH} \
     WANDB.ENABLED True \
     WANDB.PROJECT clip-reid \
     2>&1 | tee ${OUTPUT_DIR}/test_${RUN_STAMP}.log
