@@ -34,6 +34,8 @@ run_dataset () {
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     OUTPUT_DIR ${OUTPUT_DIR} \
+    WANDB.ENABLED True \
+    WANDB.PROJECT clip-reid \
     2>&1 | tee ${OUTPUT_DIR}/train_${RUN_STAMP}.log
 
   echo "[INFO] Training finished for ${DATASET_NAME}"
@@ -54,6 +56,8 @@ run_dataset () {
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     OUTPUT_DIR ${OUTPUT_DIR} \
+    WANDB.ENABLED True \
+    WANDB.PROJECT clip-reid \
     2>&1 | tee ${OUTPUT_DIR}/test_${RUN_STAMP}.log
 
   echo "[INFO] TEST DONE: ${DATASET_NAME}"
