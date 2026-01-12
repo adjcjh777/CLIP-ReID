@@ -19,8 +19,12 @@ def do_train_stage2(cfg,
              optimizer_center,
              scheduler,
              loss_fn,
-             num_query, local_rank):
+             num_query, local_rank,
+             wandb_run=None):
     log_period = cfg.SOLVER.STAGE2.LOG_PERIOD
+    wandb_log_period = log_period
+    if hasattr(cfg, "WANDB") and cfg.WANDB.LOG_PERIOD > 0:
+        wandb_log_period = cfg.WANDB.LOG_PERIOD
     checkpoint_period = cfg.SOLVER.STAGE2.CHECKPOINT_PERIOD
     eval_period = cfg.SOLVER.STAGE2.EVAL_PERIOD
     instance = cfg.DATALOADER.NUM_INSTANCE
@@ -118,6 +122,17 @@ def do_train_stage2(cfg,
                 logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Acc: {:.3f}, Base Lr: {:.2e}"
                             .format(epoch, (n_iter + 1), len(train_loader_stage2),
                                     loss_meter.avg, acc_meter.avg, scheduler.get_lr()[0]))
+            if wandb_run is not None and (n_iter + 1) % wandb_log_period == 0:
+                global_step = (epoch - 1) * len(train_loader_stage2) + n_iter + 1
+                wandb_run.log(
+                    {
+                        "train_stage2/loss": loss_meter.avg,
+                        "train_stage2/acc": acc_meter.avg,
+                        "train_stage2/lr": scheduler.get_lr()[0],
+                        "train_stage2/epoch": epoch,
+                    },
+                    step=global_step,
+                )
 
         end_time = time.time()
         time_per_batch = (end_time - start_time) / (n_iter + 1)
@@ -158,6 +173,18 @@ def do_train_stage2(cfg,
                     logger.info("mAP: {:.1%}".format(mAP))
                     for r in [1, 5, 10]:
                         logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
+                    if wandb_run is not None:
+                        global_step = epoch * len(train_loader_stage2)
+                        wandb_run.log(
+                            {
+                                "val/mAP": mAP,
+                                "val/CMC@1": cmc[0],
+                                "val/CMC@5": cmc[4],
+                                "val/CMC@10": cmc[9],
+                                "val/epoch": epoch,
+                            },
+                            step=global_step,
+                        )
                     torch.cuda.empty_cache()
             else:
                 model.eval()
@@ -179,6 +206,18 @@ def do_train_stage2(cfg,
                 logger.info("mAP: {:.1%}".format(mAP))
                 for r in [1, 5, 10]:
                     logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
+                if wandb_run is not None:
+                    global_step = epoch * len(train_loader_stage2)
+                    wandb_run.log(
+                        {
+                            "val/mAP": mAP,
+                            "val/CMC@1": cmc[0],
+                            "val/CMC@5": cmc[4],
+                            "val/CMC@10": cmc[9],
+                            "val/epoch": epoch,
+                        },
+                        step=global_step,
+                    )
                 torch.cuda.empty_cache()
 
     all_end_time = time.monotonic()

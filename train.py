@@ -10,7 +10,14 @@ import torch
 import numpy as np
 import os
 import argparse
+from datetime import datetime
 from config import cfg_base as cfg
+from utils.wandb_utils import init_wandb
+
+def _format_dataset_names(names):
+    if isinstance(names, (list, tuple)):
+        return "-".join([str(name) for name in names])
+    return str(names)
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -58,6 +65,15 @@ if __name__ == '__main__':
             logger.info(config_str)
     logger.info("Running with config:\n{}".format(cfg))
 
+    run_name = cfg.WANDB.RUN_NAME
+    if not run_name:
+        run_name = "{}-{}-{}".format(
+            cfg.MODEL.NAME,
+            _format_dataset_names(cfg.DATASETS.NAMES),
+            datetime.now().strftime("%Y%m%d_%H%M%S"),
+        )
+    wandb_run = init_wandb(cfg, output_dir, run_name, args.local_rank)
+
     if cfg.MODEL.DIST_TRAIN:
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
@@ -83,5 +99,9 @@ if __name__ == '__main__':
         optimizer_center,
         scheduler,
         loss_func,
-        num_query, args.local_rank
+        num_query, args.local_rank,
+        wandb_run=wandb_run
     )
+
+    if wandb_run is not None:
+        wandb_run.finish()

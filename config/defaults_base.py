@@ -186,3 +186,14 @@ _C.TEST.EVAL = False
 # ---------------------------------------------------------------------------- #
 # Path to checkpoint and saved log of trained model
 _C.OUTPUT_DIR = ""
+
+# ---------------------------------------------------------------------------- #
+# WandB
+# ---------------------------------------------------------------------------- #
+_C.WANDB = CN()
+_C.WANDB.ENABLED = False
+_C.WANDB.PROJECT = "clip-reid"
+_C.WANDB.ENTITY = ""
+_C.WANDB.RUN_NAME = ""
+_C.WANDB.TAGS = ()
+_C.WANDB.LOG_PERIOD = 0

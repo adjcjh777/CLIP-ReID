@@ -8,6 +8,7 @@ echo "========================================="
 DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_ROOT="/root/autodl-tmp/CLIP_REID/OUTPUT"
 CONFIG_FILE="configs/person/vit_clipreid.yml"
+RUN_STAMP=$(date +"%Y%m%d_%H%M%S")
 
 echo "[INFO] Workdir: $(pwd)"
 uv run python -V
@@ -33,12 +34,12 @@ run_dataset () {
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     OUTPUT_DIR ${OUTPUT_DIR} \
-    2>&1 | tee ${OUTPUT_DIR}/train.log
+    2>&1 | tee ${OUTPUT_DIR}/train_${RUN_STAMP}.log
 
   echo "[INFO] Training finished for ${DATASET_NAME}"
 
   # 找到一个“真实存在的”权重（不假设 model_best）
-  WEIGHT_FILE=$(ls ${OUTPUT_DIR}/*.pth 2>/dev/null | tail -n 1)
+  WEIGHT_FILE=$(ls -t ${OUTPUT_DIR}/*.pth 2>/dev/null | head -n 1)
 
   if [ -z "${WEIGHT_FILE}" ]; then
     echo "[WARN] No checkpoint found for ${DATASET_NAME}, skip test"
@@ -52,7 +53,8 @@ run_dataset () {
     TEST.WEIGHT ${WEIGHT_FILE} \
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
-    2>&1 | tee ${OUTPUT_DIR}/test.log
+    OUTPUT_DIR ${OUTPUT_DIR} \
+    2>&1 | tee ${OUTPUT_DIR}/test_${RUN_STAMP}.log
 
   echo "[INFO] TEST DONE: ${DATASET_NAME}"
 }
