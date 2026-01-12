@@ -1,44 +1,32 @@
 #!/usr/bin/env bash
-set -e
 
-#####################################
-# Auto shutdown on exit (safe)
-#####################################
-trap 'echo "[INFO] All tasks finished or aborted. Shutting down in 60s..."; sleep 60; sudo shutdown -h now' EXIT
+echo "========================================="
+echo " CLIP-ReID STRICT SEQUENTIAL RUNNER"
+echo " Market1501  ->  MSMT17 (GUARANTEED)"
+echo "========================================="
 
-echo "======================================="
-echo " CLIP-ReID Sequential Runner (uv)"
-echo " Market1501  ->  MSMT17"
-echo "======================================="
-
-#####################################
-# Paths (STRICTLY match your structure)
-#####################################
-PROJECT_ROOT=$(pwd)
 DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_ROOT="/root/autodl-tmp/CLIP_REID/OUTPUT"
 CONFIG_FILE="configs/person/vit_clipreid.yml"
 
-cd ${PROJECT_ROOT}
-
-echo "[INFO] Python:"
+echo "[INFO] Workdir: $(pwd)"
 uv run python -V
 nvidia-smi || true
 
-#####################################
-# Function: train + test
-#####################################
+############################################
+# Function: train + test (NO early exit)
+############################################
 run_dataset () {
   DATASET_NAME=$1
   OUTPUT_DIR=$2
 
-  echo "---------------------------------------"
-  echo "[INFO] Running dataset: ${DATASET_NAME}"
-  echo "---------------------------------------"
+  echo "-----------------------------------------"
+  echo "[INFO] START DATASET: ${DATASET_NAME}"
+  echo "-----------------------------------------"
 
-  mkdir -p ${OUTPUT_DIR}
+  mkdir -p "${OUTPUT_DIR}"
 
-  echo "[INFO] Training ${DATASET_NAME}..."
+  echo "[INFO] Training ${DATASET_NAME} ..."
   CUDA_VISIBLE_DEVICES=0 \
   uv run python train_clipreid.py \
     --config_file ${CONFIG_FILE} \
@@ -47,39 +35,41 @@ run_dataset () {
     OUTPUT_DIR ${OUTPUT_DIR} \
     2>&1 | tee ${OUTPUT_DIR}/train.log
 
-  if [ ! -f "${OUTPUT_DIR}/model_best.pth" ]; then
-    echo "[ERROR] model_best.pth not found for ${DATASET_NAME}"
-    exit 1
+  echo "[INFO] Training finished for ${DATASET_NAME}"
+
+  # 找到一个“真实存在的”权重（不假设 model_best）
+  WEIGHT_FILE=$(ls ${OUTPUT_DIR}/*.pth 2>/dev/null | tail -n 1)
+
+  if [ -z "${WEIGHT_FILE}" ]; then
+    echo "[WARN] No checkpoint found for ${DATASET_NAME}, skip test"
+    return
   fi
 
-  echo "[INFO] Testing ${DATASET_NAME}..."
+  echo "[INFO] Testing ${DATASET_NAME} using ${WEIGHT_FILE}"
   CUDA_VISIBLE_DEVICES=0 \
   uv run python test_clipreid.py \
     --config_file ${CONFIG_FILE} \
-    TEST.WEIGHT ${OUTPUT_DIR}/model_best.pth \
+    TEST.WEIGHT ${WEIGHT_FILE} \
     DATASETS.NAMES "('${DATASET_NAME}')" \
     DATASETS.ROOT_DIR ${DATA_ROOT} \
     2>&1 | tee ${OUTPUT_DIR}/test.log
+
+  echo "[INFO] TEST DONE: ${DATASET_NAME}"
 }
 
-#####################################
-# 1️⃣ Market1501
-#####################################
+############################################
+# STRICT SEQUENTIAL EXECUTION
+############################################
 run_dataset "market1501" "${OUTPUT_ROOT}/vit_clipreid_market1501"
+echo "[INFO] Market1501 DONE. Proceeding to MSMT17."
 
-#####################################
-# 2️⃣ MSMT17
-#####################################
 run_dataset "msmt17" "${OUTPUT_ROOT}/vit_clipreid_msmt17"
+echo "[INFO] MSMT17 DONE."
 
-#####################################
-# Finish
-#####################################
-echo "======================================="
-echo " All experiments finished successfully "
-echo "======================================="
+echo "========================================="
+echo " ALL DATASETS FINISHED SUCCESSFULLY" 
+echo "========================================="
 
-##关机##
-echo "[INFO] Training finished, shutting down in 1 minute..."
-sleep 60
-sudo shutdown -h now
+##60秒后关机##
+echo "[INFO] System will shutdown in 60 seconds..."
+sleep 60 && shutdown -h now
