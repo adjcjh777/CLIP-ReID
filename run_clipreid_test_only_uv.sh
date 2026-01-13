@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 
 echo "========================================="
-echo " CLIP-ReID STRICT SEQUENTIAL RUNNER"
-echo " Market1501  ->  MSMT17 (GUARANTEED)"
+echo " CLIP-ReID TEST ONLY"
+echo " Market1501  ->  MSMT17 (SEQUENTIAL)"
 echo "========================================="
 
 DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_ROOT="/root/autodl-tmp/CLIP_REID/OUTPUT"
 CONFIG_FILE="configs/person/vit_clipreid.yml"
 RUN_STAMP=$(date +"%Y%m%d_%H%M%S")
-STAGE1_BATCH=256
-STAGE2_BATCH=256
+
 TRAIN_SIZE="[384, 128]"
 TEST_SIZE="[384, 128]"
 TEST_BATCH=256
@@ -20,38 +19,25 @@ uv run python -V
 nvidia-smi || true
 
 ############################################
-# Function: train + test (NO early exit)
+# Function: test only
 ############################################
-run_dataset () {
+run_test () {
   DATASET_NAME=$1
   OUTPUT_DIR=$2
 
   echo "-----------------------------------------"
-  echo "[INFO] START DATASET: ${DATASET_NAME}"
+  echo "[INFO] TEST DATASET: ${DATASET_NAME}"
   echo "-----------------------------------------"
 
-  mkdir -p "${OUTPUT_DIR}"
+  if [ ! -d "${OUTPUT_DIR}" ]; then
+    echo "[WARN] Output dir not found: ${OUTPUT_DIR}"
+    return
+  fi
 
-  echo "[INFO] Training ${DATASET_NAME} ..."
-  CUDA_VISIBLE_DEVICES=0 \
-  uv run python train_clipreid.py \
-    --config_file ${CONFIG_FILE} \
-    DATASETS.NAMES "('${DATASET_NAME}')" \
-    DATASETS.ROOT_DIR ${DATA_ROOT} \
-    OUTPUT_DIR ${OUTPUT_DIR} \
-    SOLVER.STAGE1.IMS_PER_BATCH ${STAGE1_BATCH} \
-    SOLVER.STAGE2.IMS_PER_BATCH ${STAGE2_BATCH} \
-    INPUT.SIZE_TRAIN "${TRAIN_SIZE}" \
-    INPUT.SIZE_TEST "${TEST_SIZE}" \
-    TEST.IMS_PER_BATCH ${TEST_BATCH} \
-    WANDB.ENABLED True \
-    WANDB.PROJECT clip-reid \
-    2>&1 | tee ${OUTPUT_DIR}/train_${RUN_STAMP}.log
-
-  echo "[INFO] Training finished for ${DATASET_NAME}"
-
-  # 找到一个“真实存在的”权重（不假设 model_best）
-  WEIGHT_FILE=$(ls -t ${OUTPUT_DIR}/*.pth 2>/dev/null | head -n 1)
+  WEIGHT_FILE=$(ls -t ${OUTPUT_DIR}/*.pth 2>/dev/null | grep -v stage1 | head -n 1)
+  if [ -z "${WEIGHT_FILE}" ]; then
+    WEIGHT_FILE=$(ls -t ${OUTPUT_DIR}/*.pth 2>/dev/null | head -n 1)
+  fi
 
   if [ -z "${WEIGHT_FILE}" ]; then
     echo "[WARN] No checkpoint found for ${DATASET_NAME}, skip test"
@@ -72,23 +58,14 @@ run_dataset () {
     WANDB.ENABLED True \
     WANDB.PROJECT clip-reid \
     2>&1 | tee ${OUTPUT_DIR}/test_${RUN_STAMP}.log
-
-  echo "[INFO] TEST DONE: ${DATASET_NAME}"
 }
 
 ############################################
-# STRICT SEQUENTIAL EXECUTION
+# SEQUENTIAL EXECUTION
 ############################################
-run_dataset "market1501" "${OUTPUT_ROOT}/vit_clipreid_market1501"
-echo "[INFO] Market1501 DONE. Proceeding to MSMT17."
-
-run_dataset "msmt17" "${OUTPUT_ROOT}/vit_clipreid_msmt17"
-echo "[INFO] MSMT17 DONE."
+run_test "market1501" "${OUTPUT_ROOT}/vit_clipreid_market1501"
+run_test "msmt17" "${OUTPUT_ROOT}/vit_clipreid_msmt17"
 
 echo "========================================="
-echo " ALL DATASETS FINISHED SUCCESSFULLY" 
+echo " ALL TESTS FINISHED"
 echo "========================================="
-
-##60秒后关机##
-echo "[INFO] System will shutdown in 60 seconds..."
-sleep 60 && shutdown -h now
