@@ -12,10 +12,12 @@ CONFIG_FILE="configs/person/vit_clipreid.yml"
 RUN_STAMP=$(date +"%Y%m%d_%H%M%S")
 
 STAGE1_BATCH=256
-STAGE2_BATCH=256
+STAGE2_BATCH=128
 TRAIN_SIZE="[384, 128]"
 TEST_SIZE="[384, 128]"
-TEST_BATCH=256
+TEST_BATCH=128
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 echo "[INFO] Workdir: $(pwd)"
 uv run python -V
