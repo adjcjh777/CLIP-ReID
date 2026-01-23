@@ -89,6 +89,9 @@ _C.DATASETS = CN()
 _C.DATASETS.NAMES = ('market1501')
 # Root directory where datasets should be used (and downloaded if not found)
 _C.DATASETS.ROOT_DIR = ('../data')
+_C.DATASETS.TRAIN_PCT = 1.0
+_C.DATASETS.TRAIN_PCT_MODE = 'ids'
+_C.DATASETS.TRAIN_PCT_SEED = 1234
 
 
 # -----------------------------------------------------------------------------

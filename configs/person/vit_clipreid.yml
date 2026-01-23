@@ -70,6 +70,9 @@ TEST:
 DATASETS:
   NAMES: ('market1501')
   ROOT_DIR: ('/root/autodl-tmp/CLIP_REID/DATASETS')
+  TRAIN_PCT: 1.0
+  TRAIN_PCT_MODE: 'ids'
+  TRAIN_PCT_SEED: 1234
 OUTPUT_DIR: '/root/autodl-tmp/CLIP_REID/OUTPUT'
 
 #   NAMES: ('dukemtmc')

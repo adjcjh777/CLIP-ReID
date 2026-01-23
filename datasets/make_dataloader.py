@@ -1,3 +1,4 @@
+import random
 import torch
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
@@ -22,6 +23,54 @@ __factory = {
     'veri': VeRi,
     'VehicleID': VehicleID
 }
+
+def _subset_trainset(dataset, cfg):
+    train_pct = getattr(cfg.DATASETS, "TRAIN_PCT", 1.0)
+    if train_pct is None:
+        return
+    train_pct = float(train_pct)
+    if train_pct >= 1.0:
+        return
+    if train_pct <= 0.0:
+        raise ValueError("DATASETS.TRAIN_PCT must be in (0, 1].")
+
+    mode = str(getattr(cfg.DATASETS, "TRAIN_PCT_MODE", "ids")).lower()
+    seed = int(getattr(cfg.DATASETS, "TRAIN_PCT_SEED", cfg.SOLVER.SEED))
+    rng = random.Random(seed)
+    train = dataset.train
+
+    if mode == "ids":
+        pid_to_items = {}
+        for item in train:
+            pid_to_items.setdefault(item[1], []).append(item)
+        pids = list(pid_to_items.keys())
+        rng.shuffle(pids)
+        keep = max(1, int(len(pids) * train_pct))
+        selected = set(pids[:keep])
+        pid_map = {}
+        for old_pid in sorted(selected):
+            pid_map[old_pid] = len(pid_map)
+        new_train = []
+        for img_path, pid, camid, trackid in train:
+            if pid in selected:
+                new_train.append((img_path, pid_map[pid], camid, trackid))
+    elif mode == "images":
+        keep = max(1, int(len(train) * train_pct))
+        if keep >= len(train):
+            new_train = list(train)
+        else:
+            new_train = rng.sample(train, keep)
+        pids = sorted({pid for _, pid, _, _ in new_train})
+        pid_map = {pid: idx for idx, pid in enumerate(pids)}
+        new_train = [(img_path, pid_map[pid], camid, trackid) for img_path, pid, camid, trackid in new_train]
+    else:
+        raise ValueError("DATASETS.TRAIN_PCT_MODE must be 'ids' or 'images'.")
+
+    dataset.train = new_train
+    dataset.num_train_pids, dataset.num_train_imgs, dataset.num_train_cams, dataset.num_train_vids = dataset.get_imagedata_info(dataset.train)
+    print("=> Train subset enabled: pct={}, mode={}, seed={}, train_pids={}, train_imgs={}".format(
+        train_pct, mode, seed, dataset.num_train_pids, dataset.num_train_imgs
+    ))
 
 def train_collate_fn(batch):
     """
@@ -60,6 +109,7 @@ def make_dataloader(cfg):
     num_workers = cfg.DATALOADER.NUM_WORKERS
 
     dataset = __factory[cfg.DATASETS.NAMES](root=cfg.DATASETS.ROOT_DIR)
+    _subset_trainset(dataset, cfg)
     
     train_set = ImageDataset(dataset.train, train_transforms)
     train_set_normal = ImageDataset(dataset.train, val_transforms)
