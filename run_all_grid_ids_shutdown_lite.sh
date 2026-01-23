@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "========================================="
-echo " CLIP-ReID GRID RUNNER (BOTH)"
+echo " CLIP-ReID GRID RUNNER (LITE, BOTH)"
 echo " Seeds + Train-PCT (ids)"
 echo "========================================="
 
@@ -10,8 +10,9 @@ PROJECT_DIR="/root/CLIP-ReID"
 DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_ROOT="/root/autodl-tmp/CLIP_REID/OUTPUT"
 
-SEEDS_STR="777 1111 7 77 4321"
-TRAIN_PCTS_STR="1.0 0.75 0.5"
+# LITE grid: fewer seeds + fewer train_pct
+SEEDS_STR="777 1111 4321"
+TRAIN_PCTS_STR="1.0 0.5"
 TRAIN_PCT_MODE="ids"
 AUTO_SHUTDOWN=0
 
@@ -33,6 +34,7 @@ echo "[CHECK] Output root: ${OUTPUT_ROOT}"
 if [ ! -d "${OUTPUT_ROOT}" ]; then
   mkdir -p "${OUTPUT_ROOT}"
 fi
+
 touch "${OUTPUT_ROOT}/.write_test" 2>/dev/null || { echo "[ERROR] Output root not writable: ${OUTPUT_ROOT}"; exit 1; }
 rm -f "${OUTPUT_ROOT}/.write_test"
 
