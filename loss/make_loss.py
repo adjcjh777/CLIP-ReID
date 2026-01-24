@@ -34,7 +34,7 @@ def make_loss(cfg, num_classes):    # modified by gu
             return F.cross_entropy(score, target)
 
     elif cfg.DATALOADER.SAMPLER == 'softmax_triplet':
-        def loss_func(score, feat, target, target_cam, i2tscore = None):
+        def loss_func(score, feat, target, target_cam, i2tscore=None, part_scores=None, part_feats=None):
             if cfg.MODEL.METRIC_LOSS_TYPE == 'triplet':
                 if cfg.MODEL.IF_LABELSMOOTH == 'on':
                     if isinstance(score, list):
@@ -51,9 +51,18 @@ def make_loss(cfg, num_classes):    # modified by gu
                     
                     loss = cfg.MODEL.ID_LOSS_WEIGHT * ID_LOSS + cfg.MODEL.TRIPLET_LOSS_WEIGHT * TRI_LOSS
 
-                    if i2tscore != None:
+                    if i2tscore is not None:
                         I2TLOSS = xent(i2tscore, target)
                         loss = cfg.MODEL.I2T_LOSS_WEIGHT * I2TLOSS + loss
+                    
+                    # 多粒度特征损失
+                    if part_scores is not None and hasattr(cfg.MODEL, 'MULTI_GRANULARITY') and cfg.MODEL.MULTI_GRANULARITY.ENABLED:
+                        PART_ID_LOSS = sum([xent(s, target) for s in part_scores])
+                        loss = loss + cfg.MODEL.PART_ID_LOSS_WEIGHT * PART_ID_LOSS
+                    
+                    if part_feats is not None and hasattr(cfg.MODEL, 'MULTI_GRANULARITY') and cfg.MODEL.MULTI_GRANULARITY.ENABLED:
+                        PART_TRI_LOSS = sum([triplet(f, target)[0] for f in part_feats])
+                        loss = loss + cfg.MODEL.PART_TRIPLET_LOSS_WEIGHT * PART_TRI_LOSS
                         
                     return loss
                 else:
@@ -71,10 +80,18 @@ def make_loss(cfg, num_classes):    # modified by gu
 
                     loss = cfg.MODEL.ID_LOSS_WEIGHT * ID_LOSS + cfg.MODEL.TRIPLET_LOSS_WEIGHT * TRI_LOSS
                     
-                    if i2tscore != None:
+                    if i2tscore is not None:
                         I2TLOSS = F.cross_entropy(i2tscore, target)
                         loss = cfg.MODEL.I2T_LOSS_WEIGHT * I2TLOSS + loss
 
+                    # 多粒度特征损失
+                    if part_scores is not None and hasattr(cfg.MODEL, 'MULTI_GRANULARITY') and cfg.MODEL.MULTI_GRANULARITY.ENABLED:
+                        PART_ID_LOSS = sum([F.cross_entropy(s, target) for s in part_scores])
+                        loss = loss + cfg.MODEL.PART_ID_LOSS_WEIGHT * PART_ID_LOSS
+                    
+                    if part_feats is not None and hasattr(cfg.MODEL, 'MULTI_GRANULARITY') and cfg.MODEL.MULTI_GRANULARITY.ENABLED:
+                        PART_TRI_LOSS = sum([triplet(f, target)[0] for f in part_feats])
+                        loss = loss + cfg.MODEL.PART_TRIPLET_LOSS_WEIGHT * PART_TRI_LOSS
 
                     return loss
             else:

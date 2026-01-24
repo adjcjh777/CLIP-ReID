@@ -28,6 +28,88 @@ def weights_init_classifier(m):
             nn.init.constant_(m.bias, 0.0)
 
 
+class MultiGranularityHead(nn.Module):
+    """
+    多粒度特征提取头
+    
+    将 ViT 的 Patch tokens 水平划分为 num_parts 个部分，
+    对每个部分进行 GAP + BNNeck + Classifier 处理。
+    
+    Args:
+        in_planes: 输入特征维度 (ViT-B/16 = 768)
+        num_classes: 训练集身份类别数
+        num_parts: 划分的部分数量，默认 4
+        reduce_dim: 测试时降维的目标维度，默认 512
+    """
+    def __init__(self, in_planes, num_classes, num_parts=4, reduce_dim=512):
+        super().__init__()
+        self.num_parts = num_parts
+        self.in_planes = in_planes
+        self.reduce_dim_size = reduce_dim
+        
+        # 每个 Part 一个 BNNeck
+        self.bottlenecks = nn.ModuleList()
+        for _ in range(num_parts):
+            bn = nn.BatchNorm1d(in_planes)
+            bn.bias.requires_grad_(False)
+            bn.apply(weights_init_kaiming)
+            self.bottlenecks.append(bn)
+        
+        # 每个 Part 一个分类器
+        self.classifiers = nn.ModuleList()
+        for _ in range(num_parts):
+            fc = nn.Linear(in_planes, num_classes, bias=False)
+            fc.apply(weights_init_classifier)
+            self.classifiers.append(fc)
+        
+        # 降维层
+        self.reduce_layers = nn.ModuleList()
+        for _ in range(num_parts):
+            layer = nn.Linear(in_planes, reduce_dim)
+            nn.init.kaiming_normal_(layer.weight, mode='fan_out')
+            nn.init.constant_(layer.bias, 0.0)
+            self.reduce_layers.append(layer)
+        
+    def forward(self, patch_features):
+        """
+        Args:
+            patch_features: [B, H*W, C] 不含 CLS token
+        Returns:
+            训练: (part_scores, part_feats)
+            测试: concat_feat
+        """
+        B, N, C = patch_features.shape
+        W = 8  # 假设宽度 128/16=8
+        H = N // W
+        
+        # Reshape: [B, N, C] -> [B, H, W, C]
+        patch_features = patch_features.view(B, H, W, C)
+        
+        # 水平划分
+        part_size = H // self.num_parts
+        parts = []
+        for i in range(self.num_parts):
+            part = patch_features[:, i*part_size:(i+1)*part_size, :, :]
+            part = part.mean(dim=[1, 2])  # GAP: [B, C]
+            parts.append(part)
+        
+        # 处理每个 part
+        part_features = []
+        part_scores = []
+        for i, part in enumerate(parts):
+            feat = self.bottlenecks[i](part)
+            part_features.append(feat)
+            if self.training:
+                score = self.classifiers[i](feat)
+                part_scores.append(score)
+        
+        if self.training:
+            return part_scores, part_features
+        else:
+            reduced = [self.reduce_layers[i](f) for i, f in enumerate(part_features)]
+            return torch.cat(reduced, dim=1)
+
+
 class TextEncoder(nn.Module):
     def __init__(self, clip_model):
         super().__init__()
@@ -104,6 +186,20 @@ class build_transformer(nn.Module):
         self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
         self.text_encoder = TextEncoder(clip_model)
 
+        # 多粒度特征模块
+        self.multi_granularity_enabled = getattr(cfg.MODEL, 'MULTI_GRANULARITY', None) is not None and \
+                                          getattr(cfg.MODEL.MULTI_GRANULARITY, 'ENABLED', False)
+        if self.multi_granularity_enabled:
+            num_parts = cfg.MODEL.MULTI_GRANULARITY.NUM_PARTS
+            part_dim = cfg.MODEL.MULTI_GRANULARITY.PART_DIM
+            self.multi_granularity_head = MultiGranularityHead(
+                in_planes=self.in_planes,
+                num_classes=num_classes,
+                num_parts=num_parts,
+                reduce_dim=part_dim
+            )
+            print(f'Multi-Granularity enabled: {num_parts} parts, reduce_dim={part_dim}')
+
     def forward(self, x = None, label=None, get_image = False, get_text = False, cam_label= None, view_label=None):
         if get_text == True:
             prompts = self.prompt_learner(label) 
@@ -137,20 +233,37 @@ class build_transformer(nn.Module):
             img_feature = image_features[:,0]
             img_feature_proj = image_features_proj[:,0]
 
+            # 多粒度特征提取
+            part_scores = None
+            part_feats = None
+            if self.multi_granularity_enabled:
+                patch_tokens = image_features[:, 1:]  # 去掉 CLS token
+                if self.training:
+                    part_scores, part_feats = self.multi_granularity_head(patch_tokens)
+                else:
+                    part_concat_feat = self.multi_granularity_head(patch_tokens)
+
         feat = self.bottleneck(img_feature) 
         feat_proj = self.bottleneck_proj(img_feature_proj) 
         
         if self.training:
             cls_score = self.classifier(feat)
             cls_score_proj = self.classifier_proj(feat_proj)
-            return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj
+            if self.model_name == 'ViT-B-16' and self.multi_granularity_enabled:
+                return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj, part_scores, part_feats
+            else:
+                return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj
 
         else:
             if self.neck_feat == 'after':
-                # print("Test with feature after BN")
-                return torch.cat([feat, feat_proj], dim=1)
+                global_feat = torch.cat([feat, feat_proj], dim=1)
             else:
-                return torch.cat([img_feature, img_feature_proj], dim=1)
+                global_feat = torch.cat([img_feature, img_feature_proj], dim=1)
+            
+            if self.model_name == 'ViT-B-16' and self.multi_granularity_enabled:
+                return torch.cat([global_feat, part_concat_feat], dim=1)
+            else:
+                return global_feat
 
 
     def load_param(self, trained_path):

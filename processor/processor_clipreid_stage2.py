@@ -97,9 +97,18 @@ def do_train_stage2(cfg,
             else: 
                 target_view = None
             with amp.autocast(enabled=True):
-                score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
+                # 检查是否启用多粒度特征
+                multi_granularity_enabled = hasattr(cfg.MODEL, 'MULTI_GRANULARITY') and cfg.MODEL.MULTI_GRANULARITY.ENABLED
+                model_output = model(x=img, label=target, cam_label=target_cam, view_label=target_view)
+                
+                if multi_granularity_enabled and len(model_output) == 5:
+                    score, feat, image_features, part_scores, part_feats = model_output
+                else:
+                    score, feat, image_features = model_output
+                    part_scores, part_feats = None, None
+                
                 logits = image_features @ text_features.t()
-                loss = loss_fn(score, feat, target, target_cam, logits)
+                loss = loss_fn(score, feat, target, target_cam, logits, part_scores, part_feats)
 
             scaler.scale(loss).backward()
 

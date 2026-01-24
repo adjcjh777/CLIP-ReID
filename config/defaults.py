@@ -62,6 +62,14 @@ _C.MODEL.SIE_COE = 3.0
 _C.MODEL.SIE_CAMERA = False
 _C.MODEL.SIE_VIEW = False
 
+# Multi-Granularity Feature
+_C.MODEL.MULTI_GRANULARITY = CN()
+_C.MODEL.MULTI_GRANULARITY.ENABLED = False
+_C.MODEL.MULTI_GRANULARITY.NUM_PARTS = 4
+_C.MODEL.MULTI_GRANULARITY.PART_DIM = 512
+_C.MODEL.PART_ID_LOSS_WEIGHT = 0.25
+_C.MODEL.PART_TRIPLET_LOSS_WEIGHT = 1.0
+
 # -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------
