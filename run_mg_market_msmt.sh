@@ -14,10 +14,34 @@ STAGE2_BATCH=256
 TRAIN_SIZE="[384, 128]"
 TEST_SIZE="[384, 128]"
 TEST_BATCH=256
+TB_ROOT="${OUTPUT_ROOT}/tensorboard"
+TB_PORT=6006
 
 echo "[INFO] Workdir: $(pwd)"
 uv run python -V
 nvidia-smi || true
+
+############################################
+# Auto-start TensorBoard (background)
+############################################
+if pgrep -f "tensorboard.*${TB_ROOT}" >/dev/null 2>&1; then
+  echo "[INFO] TensorBoard already running."
+else
+  mkdir -p "${TB_ROOT}"
+  echo "[INFO] Starting TensorBoard on port ${TB_PORT} ..."
+  uv run tensorboard \
+    --logdir "${TB_ROOT}" \
+    --host 0.0.0.0 \
+    --port "${TB_PORT}" \
+    > "${TB_ROOT}/tensorboard_${RUN_STAMP}.log" 2>&1 &
+fi
+
+stop_tensorboard () {
+  if pgrep -f "tensorboard.*${TB_ROOT}" >/dev/null 2>&1; then
+    echo "[INFO] Stopping TensorBoard..."
+    pkill -f "tensorboard.*${TB_ROOT}" || true
+  fi
+}
 
 ############################################
 # Function: train + test (NO early exit)
@@ -95,4 +119,5 @@ echo " ALL DATASETS FINISHED SUCCESSFULLY"
 echo "========================================="
 
 echo "[INFO] System will shutdown in 3 minutes..."
+stop_tensorboard
 sleep 180 && shutdown -h now
