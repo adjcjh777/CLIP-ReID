@@ -20,11 +20,15 @@ def do_train_stage2(cfg,
              scheduler,
              loss_fn,
              num_query, local_rank,
-             wandb_run=None):
+             wandb_run=None,
+             tb_writer=None):
     log_period = cfg.SOLVER.STAGE2.LOG_PERIOD
     wandb_log_period = log_period
     if hasattr(cfg, "WANDB") and cfg.WANDB.LOG_PERIOD > 0:
         wandb_log_period = cfg.WANDB.LOG_PERIOD
+    tb_log_period = log_period
+    if hasattr(cfg, "TENSORBOARD") and cfg.TENSORBOARD.LOG_PERIOD > 0:
+        tb_log_period = cfg.TENSORBOARD.LOG_PERIOD
     checkpoint_period = cfg.SOLVER.STAGE2.CHECKPOINT_PERIOD
     eval_period = cfg.SOLVER.STAGE2.EVAL_PERIOD
     instance = cfg.DATALOADER.NUM_INSTANCE
@@ -142,6 +146,12 @@ def do_train_stage2(cfg,
                     },
                     step=global_step,
                 )
+            if tb_writer is not None and (n_iter + 1) % tb_log_period == 0:
+                global_step = (epoch - 1) * len(train_loader_stage2) + n_iter + 1
+                tb_writer.add_scalar("train_stage2/loss", loss_meter.avg, global_step)
+                tb_writer.add_scalar("train_stage2/acc", acc_meter.avg, global_step)
+                tb_writer.add_scalar("train_stage2/lr", scheduler.get_lr()[0], global_step)
+                tb_writer.add_scalar("train_stage2/epoch", epoch, global_step)
 
         end_time = time.time()
         time_per_batch = (end_time - start_time) / (n_iter + 1)
@@ -194,6 +204,13 @@ def do_train_stage2(cfg,
                             },
                             step=global_step,
                         )
+                    if tb_writer is not None:
+                        global_step = epoch * len(train_loader_stage2)
+                        tb_writer.add_scalar("val/mAP", mAP, global_step)
+                        tb_writer.add_scalar("val/CMC@1", cmc[0], global_step)
+                        tb_writer.add_scalar("val/CMC@5", cmc[4], global_step)
+                        tb_writer.add_scalar("val/CMC@10", cmc[9], global_step)
+                        tb_writer.add_scalar("val/epoch", epoch, global_step)
                     torch.cuda.empty_cache()
             else:
                 model.eval()
@@ -227,6 +244,13 @@ def do_train_stage2(cfg,
                         },
                         step=global_step,
                     )
+                if tb_writer is not None:
+                    global_step = epoch * len(train_loader_stage2)
+                    tb_writer.add_scalar("val/mAP", mAP, global_step)
+                    tb_writer.add_scalar("val/CMC@1", cmc[0], global_step)
+                    tb_writer.add_scalar("val/CMC@5", cmc[4], global_step)
+                    tb_writer.add_scalar("val/CMC@10", cmc[9], global_step)
+                    tb_writer.add_scalar("val/epoch", epoch, global_step)
                 torch.cuda.empty_cache()
 
     all_end_time = time.monotonic()

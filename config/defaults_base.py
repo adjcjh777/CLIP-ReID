@@ -200,3 +200,11 @@ _C.WANDB.ENTITY = ""
 _C.WANDB.RUN_NAME = ""
 _C.WANDB.TAGS = ()
 _C.WANDB.LOG_PERIOD = 0
+
+# -----------------------------------------------------------------------------
+# TensorBoard
+# -----------------------------------------------------------------------------
+_C.TENSORBOARD = CN()
+_C.TENSORBOARD.ENABLED = False
+_C.TENSORBOARD.LOG_DIR = ""
+_C.TENSORBOARD.LOG_PERIOD = 0

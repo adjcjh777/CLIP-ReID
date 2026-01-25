@@ -15,6 +15,7 @@ import argparse
 from datetime import datetime
 from config import cfg
 from utils.wandb_utils import init_wandb
+from utils.tensorboard_utils import init_tensorboard
 
 def _format_dataset_names(names):
     if isinstance(names, (list, tuple)):
@@ -75,6 +76,7 @@ if __name__ == '__main__':
             datetime.now().strftime("%Y%m%d_%H%M%S"),
         )
     wandb_run = init_wandb(cfg, output_dir, run_name, args.local_rank)
+    tb_writer = init_tensorboard(cfg, output_dir, args.local_rank)
 
     if cfg.MODEL.DIST_TRAIN:
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
@@ -96,7 +98,8 @@ if __name__ == '__main__':
         optimizer_1stage,
         scheduler_1stage,
         args.local_rank,
-        wandb_run=wandb_run
+        wandb_run=wandb_run,
+        tb_writer=tb_writer
     )
 
     optimizer_2stage, optimizer_center_2stage = make_optimizer_2stage(cfg, model, center_criterion)
@@ -114,8 +117,11 @@ if __name__ == '__main__':
         scheduler_2stage,
         loss_func,
         num_query, args.local_rank,
-        wandb_run=wandb_run
+        wandb_run=wandb_run,
+        tb_writer=tb_writer
     )
 
     if wandb_run is not None:
         wandb_run.finish()
+    if tb_writer is not None:
+        tb_writer.close()

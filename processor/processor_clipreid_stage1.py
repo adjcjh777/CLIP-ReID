@@ -15,7 +15,8 @@ def do_train_stage1(cfg,
              optimizer,
              scheduler,
              local_rank,
-             wandb_run=None):
+             wandb_run=None,
+             tb_writer=None):
     checkpoint_period = cfg.SOLVER.STAGE1.CHECKPOINT_PERIOD
     device = "cuda"
     epochs = cfg.SOLVER.STAGE1.MAX_EPOCHS
@@ -23,6 +24,9 @@ def do_train_stage1(cfg,
     wandb_log_period = log_period
     if hasattr(cfg, "WANDB") and cfg.WANDB.LOG_PERIOD > 0:
         wandb_log_period = cfg.WANDB.LOG_PERIOD
+    tb_log_period = log_period
+    if hasattr(cfg, "TENSORBOARD") and cfg.TENSORBOARD.LOG_PERIOD > 0:
+        tb_log_period = cfg.TENSORBOARD.LOG_PERIOD
 
     logger = logging.getLogger("transreid.train")
     logger.info('start training')
@@ -105,6 +109,11 @@ def do_train_stage1(cfg,
                     },
                     step=global_step,
                 )
+            if tb_writer is not None and (i + 1) % tb_log_period == 0:
+                global_step = (epoch - 1) * (i_ter + 1) + i + 1
+                tb_writer.add_scalar("train_stage1/loss", loss_meter.avg, global_step)
+                tb_writer.add_scalar("train_stage1/lr", scheduler._get_lr(epoch)[0], global_step)
+                tb_writer.add_scalar("train_stage1/epoch", epoch, global_step)
 
         if epoch % checkpoint_period == 0:
             if cfg.MODEL.DIST_TRAIN:
