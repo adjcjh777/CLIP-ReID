@@ -390,15 +390,62 @@ def main():
     print(f"Gallery: {args.gallery_annotation}")
     print()
     
-    # TODO: 加载配置、模型和数据
-    # 这里需要根据实际的模型结构来实现
+    # 1. 加载配置
+    from config import cfg
+    if args.config_file != "":
+        cfg.merge_from_file(args.config_file)
+    cfg.freeze()
     
-    print("请根据实际模型结构完成评估脚本的实现")
-    print("主要步骤:")
-    print("1. 加载配置 (如果使用)")
-    print("2. 构建模型并加载权重")
-    print("3. 创建数据加载器 (使用 TextReIDDataset)")
-    print("4. 调用 evaluate_text_to_image 函数")
+    # 2. 准备数据
+    from datasets.text_reid_dataset import build_text_reid_dataloaders
+    
+    # 我们需要一个分词器，这里假设使用 CLIP 的 simple_tokenizer
+    # 或者直接依赖模型内部的 tokenization
+    try:
+        from model.clip import clip
+        tokenizer = lambda text: clip.tokenize(text, truncate=True)
+    except ImportError:
+        print("Warning: CLIP tokenizer not found, using detailed error")
+        tokenizer = None
+
+    train_loader, query_loader, gallery_loader = build_text_reid_dataloaders(
+        train_image_dir=os.path.join(cfg.DATASETS.ROOT_DIR, 'Market-1501-v15.09.15', 'bounding_box_train'), # 仅占位，评估不需要train
+        train_annotation='', # 占位
+        query_image_dir=args.query_image_dir,
+        query_annotation=args.query_annotation,
+        gallery_image_dir=args.gallery_image_dir,
+        gallery_annotation=args.gallery_annotation,
+        batch_size=args.batch_size,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
+        tokenizer=tokenizer,
+        use_identity_sampler=False
+    )
+    
+    # 3. 构建模型
+    from model.make_model_clipreid import make_model
+    # 假设我们知道 num_classes，或者从 checkpoint 加载
+    # 这里我们临时用 751 (Market1501)
+    num_classes = 751 
+    model = make_model(cfg, num_class=num_classes, camera_num=0, view_num=0)
+    
+    # 4. 加载权重
+    print(f"Loading weights from {args.model_weights}")
+    state_dict = torch.load(args.model_weights, map_location='cpu')
+    if 'model' in state_dict:
+        state_dict = state_dict['model']
+    model.load_state_dict(state_dict, strict=False)
+    model.to(args.device)
+    model.eval()
+    
+    # 5. 评估
+    evaluate_text_to_image(
+        model,
+        query_loader,
+        gallery_loader,
+        device=args.device,
+        visualize=args.visualize,
+        save_dir=args.save_dir
+    )
 
 
 if __name__ == '__main__':

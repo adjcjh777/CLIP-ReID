@@ -39,11 +39,13 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python train_text_reid.py \
     DATASETS.NAMES "('${DATASET}')" \
     DATASETS.ROOT_DIR "/root/autodl-tmp/CLIP_REID/DATASETS" \
     OUTPUT_DIR "$OUTPUT_DIR" \
-    SOLVER.STAGE1.IMS_PER_BATCH 64 \
+    SOLVER.STAGE1.IMS_PER_BATCH 32 \
     SOLVER.STAGE1.MAX_EPOCHS 60 \
-    SOLVER.STAGE2.IMS_PER_BATCH 64 \
+    SOLVER.STAGE2.IMS_PER_BATCH 32 \
     SOLVER.STAGE2.MAX_EPOCHS 60 \
     MODEL.DEVICE_ID "('${GPU_ID}')" \
     2>&1 | tee "${OUTPUT_DIR}/train.log"
 
 echo "Training completed."
+echo "Shutting down system..."
+shutdown -h now
