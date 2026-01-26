@@ -67,7 +67,7 @@ TEST:
   NECK_FEAT: 'before'
   FEAT_NORM: 'yes'
 
-DATASETS:
+# DATASETS:
 #   NAMES: ('market1501')
 #   ROOT_DIR: ('')
 # OUTPUT_DIR: ''
