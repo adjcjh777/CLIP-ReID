@@ -47,5 +47,3 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} python train_text_reid.py \
     2>&1 | tee "${OUTPUT_DIR}/train.log"
 
 echo "Training completed."
-echo "Shutting down system..."
-shutdown -h now

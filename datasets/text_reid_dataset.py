@@ -13,6 +13,7 @@ class TextReIDDataset(Dataset):
     """
     Text-Guided ReID 数据集
     支持 image-to-text 和 text-to-image 训练
+    支持 Market1501 (平铺) 和 MSMT17 (子目录) 两种结构
     """
     def __init__(self, image_dir: str, annotation_file: str, transform=None, mode: str = 'train'):
         self.image_dir = Path(image_dir)
@@ -23,7 +24,14 @@ class TextReIDDataset(Dataset):
             
         self.data = []
         for img_name, ann in self.annotations.items():
+            # 尝试直接路径 (Market1501 风格)
             img_path = self.image_dir / img_name
+            
+            # 如果不存在，尝试子目录结构 (MSMT17 风格: pid/img_name)
+            if not img_path.exists():
+                pid_str = str(ann['pid']).zfill(4)
+                img_path = self.image_dir / pid_str / img_name
+            
             if img_path.exists():
                 self.data.append({
                     'image_path': str(img_path),
@@ -32,8 +40,7 @@ class TextReIDDataset(Dataset):
                     'camid': ann.get('camid', 0)
                 })
         
-        # 排序并建立索引
-        self.data.sort(key=lambda x: (x['pid'], x['image_path']))
+        print(f"Loaded {len(self.data)} images from {image_dir}")
         
         # PID 重映射 (0 ~ N-1)
         unique_pids = sorted(list(set(d['pid'] for d in self.data)))
@@ -96,6 +103,8 @@ class TextReIDCollator:
         return res
 
 def make_text_dataloader(cfg, annotation_file, tokenizer=None):
+    from .sampler import RandomIdentitySampler
+    
     train_transforms = T.Compose([
             T.Resize(cfg.INPUT.SIZE_TRAIN, interpolation=3),
             T.RandomHorizontalFlip(p=cfg.INPUT.PROB),
@@ -103,7 +112,6 @@ def make_text_dataloader(cfg, annotation_file, tokenizer=None):
             T.RandomCrop(cfg.INPUT.SIZE_TRAIN),
             T.ToTensor(),
             T.Normalize(mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD),
-            # 注意：RandomErasing 需要 timm
         ])
     try:
         from timm.data.random_erasing import RandomErasing
@@ -113,18 +121,28 @@ def make_text_dataloader(cfg, annotation_file, tokenizer=None):
     except ImportError:
         pass
 
+    # 根据数据集名称选择图像目录
+    dataset_name = cfg.DATASETS.NAMES
+    if 'msmt17' in dataset_name.lower():
+        image_dir = cfg.DATASETS.ROOT_DIR + '/MSMT17/train'
+    else:  # market1501 或其他
+        image_dir = cfg.DATASETS.ROOT_DIR + '/Market-1501-v15.09.15/bounding_box_train'
+    
     dataset = TextReIDDataset(
-        cfg.DATASETS.ROOT_DIR + '/Market-1501-v15.09.15/bounding_box_train',
+        image_dir,
         annotation_file,
         transform=train_transforms
     )
+    # RandomIdentitySampler 需要 data_source 是一个列表，每个元素是 4 元组
+    data_source = [(d['image_path'], d['pid'], d['camid'], 0) for d in dataset.data]  # viewid 设为 0
     
     collator = TextReIDCollator(tokenizer)
     
+    # 使用 RandomIdentitySampler 保证每个 batch 有 NUM_INSTANCE 个相同 ID 的样本
     loader = DataLoader(
         dataset,
-        batch_size=cfg.SOLVER.STAGE1.IMS_PER_BATCH, # 使用配置中的 batch size
-        shuffle=True,
+        batch_size=cfg.SOLVER.STAGE1.IMS_PER_BATCH,
+        sampler=RandomIdentitySampler(data_source, cfg.SOLVER.STAGE1.IMS_PER_BATCH, cfg.DATALOADER.NUM_INSTANCE),
         num_workers=cfg.DATALOADER.NUM_WORKERS,
         collate_fn=collator,
         pin_memory=True

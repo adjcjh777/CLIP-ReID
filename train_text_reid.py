@@ -29,6 +29,8 @@ if __name__ == '__main__':
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER)
     parser.add_argument("--local_rank", default=0, type=int)
     parser.add_argument("--annotation_file", default="annotations/market1501_train.json", type=str)
+    parser.add_argument("--skip_stage1", action="store_true", help="Skip Stage 1 training")
+    parser.add_argument("--stage1_checkpoint", type=str, default="", help="Path to Stage 1 checkpoint to load")
     args = parser.parse_args()
 
     if args.config_file != "":
@@ -50,13 +52,10 @@ if __name__ == '__main__':
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
     # Create Text-Guided DataLoader
-    # Note: make_text_dataloader returns (loader, num_classes)
-    # But do_train_stage2 needs val_loader. For now we use the original make_dataloader for val.
     from datasets.make_dataloader_clipreid import make_dataloader
     _, _, val_loader, num_query, num_classes_orig, cam_num, view_num = make_dataloader(cfg)
     
     # Text Dataloader
-    # Note: Using CLIP tokenizer from clip library if needed, passed as none for now
     train_loader_text, num_classes_text = make_text_dataloader(cfg, args.annotation_file)
     
     num_classes = max(num_classes_orig, num_classes_text)
@@ -64,21 +63,23 @@ if __name__ == '__main__':
     # Model
     model = make_model(cfg, num_class=num_classes, camera_num=cam_num, view_num=view_num)
     
-    # Text Encoder (if we want to use it separately, but it's better integrated into the model)
-    # For this quick prototype, we assume the model handles visual part, and we might add text encoder part
-    # But for now, let's just train the visual part with the NEW dataloader to prove pipeline works
-    
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
     
-    # Optimizers
-    optimizer_1stage = make_optimizer_1stage(cfg, model)
-    scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=cfg.SOLVER.STAGE1.MAX_EPOCHS, 
-                                        lr_min=cfg.SOLVER.STAGE1.LR_MIN, 
-                                        warmup_lr_init=cfg.SOLVER.STAGE1.WARMUP_LR_INIT, 
-                                        warmup_t=cfg.SOLVER.STAGE1.WARMUP_EPOCHS)
-
     # Stage 1
-    do_train_text_guided_stage1(cfg, model, train_loader_text, optimizer_1stage, scheduler_1stage, args.local_rank)
+    if args.skip_stage1:
+        logger.info("Skipping Stage 1 training")
+        if args.stage1_checkpoint:
+            logger.info(f"Loading Stage 1 checkpoint from {args.stage1_checkpoint}")
+            state_dict = torch.load(args.stage1_checkpoint, map_location='cpu')
+            model.load_state_dict(state_dict, strict=False)
+            logger.info("Stage 1 checkpoint loaded successfully")
+    else:
+        optimizer_1stage = make_optimizer_1stage(cfg, model)
+        scheduler_1stage = create_scheduler(optimizer_1stage, num_epochs=cfg.SOLVER.STAGE1.MAX_EPOCHS, 
+                                            lr_min=cfg.SOLVER.STAGE1.LR_MIN, 
+                                            warmup_lr_init=cfg.SOLVER.STAGE1.WARMUP_LR_INIT, 
+                                            warmup_t=cfg.SOLVER.STAGE1.WARMUP_EPOCHS)
+        do_train_text_guided_stage1(cfg, model, train_loader_text, optimizer_1stage, scheduler_1stage, args.local_rank)
     
     # Stage 2
     optimizer_2stage, optimizer_center_2stage = make_optimizer_2stage(cfg, model, center_criterion)
@@ -89,3 +90,4 @@ if __name__ == '__main__':
     do_train_text_guided(cfg, model, center_criterion, train_loader_text, val_loader, 
                          optimizer_2stage, optimizer_center_2stage, scheduler_2stage, loss_func, 
                          num_query, args.local_rank)
+
