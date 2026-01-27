@@ -103,8 +103,25 @@ class build_transformer(nn.Module):
         dataset_name = cfg.DATASETS.NAMES
         self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
         self.text_encoder = TextEncoder(clip_model)
+        self.token_embedding = clip_model.token_embedding
 
-    def forward(self, x = None, label=None, get_image = False, get_text = False, cam_label= None, view_label=None):
+    def encode_text_tokens(self, text_tokens):
+        """
+        Encode raw text tokens (from clip.tokenize) into CLIP text features.
+        text_tokens: [B, 77]
+        """
+        x = self.token_embedding(text_tokens).type(self.text_encoder.dtype)
+        x = x + self.text_encoder.positional_embedding.type(self.text_encoder.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.text_encoder.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.text_encoder.ln_final(x).type(self.text_encoder.dtype)
+        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ self.text_encoder.text_projection
+        return x
+
+    def forward(self, x = None, label=None, get_image = False, get_text = False, text_tokens=None, get_text_tokens=False, cam_label= None, view_label=None):
+        if get_text_tokens == True:
+            return self.encode_text_tokens(text_tokens)
         if get_text == True:
             prompts = self.prompt_learner(label) 
             text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts)
@@ -236,4 +253,3 @@ class PromptLearner(nn.Module):
         ) 
 
         return prompts 
-

@@ -12,6 +12,12 @@ Usage:
 
 Requirements:
     pip install transformers accelerate
+
+Notes:
+    - 默认使用 BLIP2 模型（更强但更重）。
+    - 如果显存不足，建议使用 BLIP1：
+      Salesforce/blip-image-captioning-base
+      Salesforce/blip-image-captioning-large
 """
 
 import torch
@@ -83,13 +89,39 @@ def collate_fn(batch):
     return images, paths, names, pids, camids
 
 
+def _load_model(model_name: str, device: str):
+    """Load BLIP/BLIP2 model based on model_name."""
+    use_blip2 = "blip2" in model_name.lower()
+    if use_blip2:
+        from transformers import Blip2Processor, Blip2ForConditionalGeneration
+        processor = Blip2Processor.from_pretrained(model_name)
+        dtype = torch.float16 if device.startswith("cuda") else torch.float32
+        device_map = "auto" if device.startswith("cuda") else None
+        model = Blip2ForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            device_map=device_map
+        )
+    else:
+        from transformers import BlipProcessor, BlipForConditionalGeneration
+        processor = BlipProcessor.from_pretrained(model_name)
+        model = BlipForConditionalGeneration.from_pretrained(model_name)
+        if device.startswith("cuda"):
+            model = model.half()
+    if not (use_blip2 and device.startswith("cuda")):
+        model = model.to(device)
+    model.eval()
+    return processor, model, use_blip2
+
+
 def generate_captions(
     image_dir: str,
     output_file: str,
     model_name: str = "Salesforce/blip2-opt-2.7b",
     batch_size: int = 8,
     device: str = "cuda",
-    prompt: str = None
+    prompt: str = None,
+    max_images: Optional[int] = None,
 ):
     """
     使用 BLIP-2 生成图像描述
@@ -102,9 +134,7 @@ def generate_captions(
         device: 设备
         prompt: 自定义提示词
     """
-    from transformers import Blip2Processor, Blip2ForConditionalGeneration
-    
-    print(f"=== BLIP-2 Caption Generation ===")
+    print(f"=== BLIP Caption Generation ===")
     print(f"Model: {model_name}")
     print(f"Image dir: {image_dir}")
     print(f"Output: {output_file}")
@@ -112,17 +142,14 @@ def generate_captions(
     print()
     
     # 加载模型
-    print("Loading BLIP-2 model...")
-    processor = Blip2Processor.from_pretrained(model_name)
-    model = Blip2ForConditionalGeneration.from_pretrained(
-        model_name, 
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
+    print("Loading BLIP model...")
+    processor, model, use_blip2 = _load_model(model_name, device)
     print("Model loaded successfully!")
     
     # 创建数据集
     dataset = ImageDataset(image_dir, processor)
+    if max_images is not None:
+        dataset.image_paths = dataset.image_paths[:max_images]
     dataloader = DataLoader(
         dataset, 
         batch_size=batch_size, 
@@ -148,21 +175,24 @@ def generate_captions(
     for images, paths, names, pids, camids in tqdm(dataloader):
         # 处理输入
         inputs = processor(
-            images=images, 
+            images=images,
             text=[prompt] * len(images),
             return_tensors="pt",
             padding=True
-        ).to(device, torch.float16)
+        )
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        if device.startswith("cuda") and "pixel_values" in inputs:
+            inputs["pixel_values"] = inputs["pixel_values"].half()
         
         # 生成描述
         with torch.no_grad():
-            generated_ids = model.generate(
-                **inputs,
-                max_new_tokens=100,
+            gen_kwargs = dict(
+                max_new_tokens=80,
                 num_beams=5,
                 early_stopping=True,
                 do_sample=False
             )
+            generated_ids = model.generate(**inputs, **gen_kwargs)
         
         # 解码
         generated_texts = processor.batch_decode(
@@ -184,7 +214,7 @@ def generate_captions(
                 'pid': pid,
                 'camid': camid,
                 'text': text,
-                'source': 'blip2',
+                'source': 'blip2' if use_blip2 else 'blip',
                 'model': model_name
             }
     
@@ -225,16 +255,9 @@ def generate_captions_batch(
         batch_size: 批次大小
         device: 设备
     """
-    from transformers import Blip2Processor, Blip2ForConditionalGeneration
-    
     # 只加载一次模型
-    print("Loading BLIP-2 model...")
-    processor = Blip2Processor.from_pretrained(model_name)
-    model = Blip2ForConditionalGeneration.from_pretrained(
-        model_name, 
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
+    print("Loading BLIP model...")
+    processor, model, use_blip2 = _load_model(model_name, device)
     print("Model loaded!\n")
     
     output_path = Path(output_dir)
@@ -261,11 +284,14 @@ def generate_captions_batch(
         
         for images, paths, names, pids, camids in tqdm(dataloader, desc=dir_name):
             inputs = processor(
-                images=images, 
+                images=images,
                 text=[prompt] * len(images),
                 return_tensors="pt",
                 padding=True
-            ).to(device, torch.float16)
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            if device.startswith("cuda") and "pixel_values" in inputs:
+                inputs["pixel_values"] = inputs["pixel_values"].half()
             
             with torch.no_grad():
                 generated_ids = model.generate(
@@ -285,7 +311,8 @@ def generate_captions_batch(
                     'pid': pid,
                     'camid': camid,
                     'text': text.strip(),
-                    'source': 'blip2'
+                    'source': 'blip2' if use_blip2 else 'blip',
+                    'model': model_name
                 }
         
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -300,7 +327,7 @@ def main():
                         help='Path to image directory')
     parser.add_argument('--output_file', type=str, required=True,
                         help='Output JSON file')
-    parser.add_argument('--model_name', type=str, 
+    parser.add_argument('--model_name', type=str,
                         default="Salesforce/blip2-opt-2.7b",
                         help='BLIP-2 model name')
     parser.add_argument('--batch_size', type=int, default=8,
@@ -309,6 +336,8 @@ def main():
                         help='Device to use')
     parser.add_argument('--prompt', type=str, default=None,
                         help='Custom prompt for generation')
+    parser.add_argument('--max_images', type=int, default=None,
+                        help='Limit number of images for quick test')
     
     args = parser.parse_args()
     
@@ -318,7 +347,8 @@ def main():
         model_name=args.model_name,
         batch_size=args.batch_size,
         device=args.device,
-        prompt=args.prompt
+        prompt=args.prompt,
+        max_images=args.max_images
     )
 
 

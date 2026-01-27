@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple, Optional
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
+from model.clip import clip
 
 class TextReIDDataset(Dataset):
     """
@@ -97,7 +98,7 @@ class TextReIDCollator:
         }
         
         if self.tokenizer:
-            text_tokens = self.tokenizer(texts).squeeze(1) # [B, 77]
+            text_tokens = self.tokenizer(texts).squeeze(1)  # [B, 77]
             res['text_tokens'] = text_tokens
             
         return res
@@ -136,6 +137,8 @@ def make_text_dataloader(cfg, annotation_file, tokenizer=None):
     # RandomIdentitySampler 需要 data_source 是一个列表，每个元素是 4 元组
     data_source = [(d['image_path'], d['pid'], d['camid'], 0) for d in dataset.data]  # viewid 设为 0
     
+    if tokenizer is None:
+        tokenizer = clip.tokenize
     collator = TextReIDCollator(tokenizer)
     
     # 使用 RandomIdentitySampler 保证每个 batch 有 NUM_INSTANCE 个相同 ID 的样本

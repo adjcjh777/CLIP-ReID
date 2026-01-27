@@ -49,7 +49,13 @@ def do_train_text_guided(cfg, model, center_criterion, train_loader, val_loader,
                 score, feat, image_features = model(img, target)
             
             # 计算损失
-            loss = loss_func(score, feat, target, target_cam)
+            i2t_logits = None
+            text_tokens = batch.get('text_tokens')
+            if text_tokens is not None:
+                text_tokens = text_tokens.to(device)
+                text_features = model(get_text_tokens=True, text_tokens=text_tokens)
+                i2t_logits = image_features @ text_features.t()
+            loss = loss_func(score, feat, target, target_cam, i2t_logits)
             
             # 反向传播
             optimizer.zero_grad()
@@ -127,8 +133,12 @@ def do_train_text_guided_stage1(cfg, model, train_loader, optimizer, scheduler, 
 
     # Stage 1: Text-Image Contrastive Learning
     from loss.supcontrast import SupConLoss
+    from loss.cross_modal_loss import CrossModalContrastiveLoss
     xent = SupConLoss(device)
-    scaler = torch.cuda.amp.GradScaler()
+    cm_contrast = CrossModalContrastiveLoss()
+    # AMP 在此处容易触发 GradScaler 的 inf 检测异常，优先稳定训练
+    use_amp = False
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     for epoch in range(1, epochs + 1):
         loss_meter.reset()
@@ -141,25 +151,30 @@ def do_train_text_guided_stage1(cfg, model, train_loader, optimizer, scheduler, 
             camids = batch.get('camids')
             if camids is not None: 
                 camids = camids.to(device)
+            text_tokens = batch.get('text_tokens')
+            if text_tokens is not None:
+                text_tokens = text_tokens.to(device)
             
             optimizer.zero_grad()
             
-            with torch.cuda.amp.autocast(enabled=True):
+            with torch.cuda.amp.autocast(enabled=use_amp):
                 if cfg.MODEL.SIE_CAMERA and camids is not None:
                     img_out = model(x=img, label=target, get_image=True, cam_label=camids)
                 else:
                     img_out = model(x=img, label=target, get_image=True)
-                
+
                 image_features = img_out
-                text_features = model(label=target, get_text=True)
-                
-                loss_i2t = xent(image_features, text_features, target, target)
-                loss_t2i = xent(text_features, image_features, target, target)
-                loss = loss_i2t + loss_t2i
+                if text_tokens is not None:
+                    text_features = model(get_text_tokens=True, text_tokens=text_tokens)
+                    loss = cm_contrast(text_features, image_features, target)
+                else:
+                    text_features = model(label=target, get_text=True)
+                    loss_i2t = xent(image_features, text_features, target, target)
+                    loss_t2i = xent(text_features, image_features, target, target)
+                    loss = loss_i2t + loss_t2i
             
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
             
             loss_meter.update(loss.item(), img.shape[0])
             
