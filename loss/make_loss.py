@@ -4,6 +4,7 @@
 @contact: sherlockliao01@gmail.com
 """
 
+import torch
 import torch.nn.functional as F
 from .softmax_loss import CrossEntropyLabelSmooth, LabelSmoothingCrossEntropy
 from .triplet_loss import TripletLoss
@@ -52,7 +53,15 @@ def make_loss(cfg, num_classes):    # modified by gu
                     loss = cfg.MODEL.ID_LOSS_WEIGHT * ID_LOSS + cfg.MODEL.TRIPLET_LOSS_WEIGHT * TRI_LOSS
 
                     if i2tscore != None:
-                        I2TLOSS = xent(i2tscore, target)
+                        # If i2t logits are batch-wise (e.g., [bs, bs]), use batch index labels.
+                        # Otherwise, treat them as class-wise logits.
+                        if i2tscore.size(0) == target.size(0) and (
+                            i2tscore.size(1) == target.size(0) or target.max().item() >= i2tscore.size(1)
+                        ):
+                            batch_labels = torch.arange(i2tscore.size(0), device=i2tscore.device)
+                            I2TLOSS = F.cross_entropy(i2tscore, batch_labels)
+                        else:
+                            I2TLOSS = xent(i2tscore, target)
                         loss = cfg.MODEL.I2T_LOSS_WEIGHT * I2TLOSS + loss
                         
                     return loss
@@ -72,7 +81,13 @@ def make_loss(cfg, num_classes):    # modified by gu
                     loss = cfg.MODEL.ID_LOSS_WEIGHT * ID_LOSS + cfg.MODEL.TRIPLET_LOSS_WEIGHT * TRI_LOSS
                     
                     if i2tscore != None:
-                        I2TLOSS = F.cross_entropy(i2tscore, target)
+                        if i2tscore.size(0) == target.size(0) and (
+                            i2tscore.size(1) == target.size(0) or target.max().item() >= i2tscore.size(1)
+                        ):
+                            batch_labels = torch.arange(i2tscore.size(0), device=i2tscore.device)
+                            I2TLOSS = F.cross_entropy(i2tscore, batch_labels)
+                        else:
+                            I2TLOSS = F.cross_entropy(i2tscore, target)
                         loss = cfg.MODEL.I2T_LOSS_WEIGHT * I2TLOSS + loss
 
 
@@ -85,5 +100,3 @@ def make_loss(cfg, num_classes):    # modified by gu
         print('expected sampler should be softmax, triplet, softmax_triplet or softmax_triplet_center'
               'but got {}'.format(cfg.DATALOADER.SAMPLER))
     return loss_func, center_criterion
-
-
