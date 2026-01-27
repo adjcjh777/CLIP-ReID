@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import math
 import numpy as np
 from .clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()
@@ -178,7 +180,17 @@ class build_transformer(nn.Module):
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)
         for i in param_dict:
-            self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
+            key = i.replace('module.', '')
+            if key not in self.state_dict():
+                continue
+            if key == "image_encoder.positional_embedding" and self.state_dict()[key].shape != param_dict[i].shape:
+                # Resize position embedding when test input size differs from training.
+                posemb_new = self.state_dict()[key]
+                posemb = param_dict[i]
+                posemb = resize_pos_embed(posemb, posemb_new, self.h_resolution, self.w_resolution)
+                self.state_dict()[key].copy_(posemb)
+            else:
+                self.state_dict()[key].copy_(param_dict[i])
         print('Loading pretrained model from {}'.format(trained_path))
 
     def load_param_finetune(self, model_path):
@@ -209,6 +221,37 @@ def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_si
     model = clip.build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size)
 
     return model
+
+def resize_pos_embed(posemb, posemb_new, hight, width):
+    # Rescale the grid of position embeddings when loading from state_dict.
+    print('Resized position embedding: %s to %s', posemb.shape, posemb_new.shape)
+    posemb_token, posemb_grid = posemb[:1], posemb[1:]
+    num_grid = posemb_grid.shape[0]
+    target_ratio = float(hight) / float(width)
+
+    # Infer old grid size by factorizing num_grid and matching aspect ratio.
+    best_h = None
+    best_w = None
+    best_diff = None
+    for h in range(1, num_grid + 1):
+        if num_grid % h != 0:
+            continue
+        w = num_grid // h
+        ratio = float(h) / float(w)
+        diff = abs(ratio - target_ratio)
+        if best_diff is None or diff < best_diff:
+            best_diff = diff
+            best_h, best_w = h, w
+
+    if best_h is None or best_w is None:
+        raise ValueError(f"Cannot infer grid size for positional embedding length {num_grid}")
+
+    print('Position embedding resize to height:{} width: {}'.format(hight, width))
+    posemb_grid = posemb_grid.reshape(1, best_h, best_w, -1).permute(0, 3, 1, 2)
+    posemb_grid = F.interpolate(posemb_grid, size=(hight, width), mode='bilinear')
+    posemb_grid = posemb_grid.permute(0, 2, 3, 1).reshape(1, hight * width, -1)
+    posemb = torch.cat([posemb_token, posemb_grid.squeeze()], dim=0)
+    return posemb
 
 class PromptLearner(nn.Module):
     def __init__(self, num_class, dataset_name, dtype, token_embedding):
