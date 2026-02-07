@@ -13,7 +13,11 @@ from .center_loss import CenterLoss
 
 def make_loss(cfg, num_classes):    # modified by gu
     sampler = cfg.DATALOADER.SAMPLER
-    feat_dim = 2048
+    # Determine feat_dim from model name (ViT-B-16: 768, RN50: 2048)
+    if cfg.MODEL.NAME == 'ViT-B-16':
+        feat_dim = 768
+    else:
+        feat_dim = 2048
     center_criterion = CenterLoss(num_classes=num_classes, feat_dim=feat_dim, use_gpu=True)  # center loss
     if 'triplet' in cfg.MODEL.METRIC_LOSS_TYPE:
         if cfg.MODEL.NO_MARGIN:
