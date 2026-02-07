@@ -28,6 +28,7 @@ import numpy as np
 from tqdm import tqdm
 from PIL import Image
 import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -63,19 +64,18 @@ def extract_image_features(
         for batch in tqdm(dataloader, desc='Extracting image features'):
             images = batch['images'].to(device)
             
-            # 提取特征
-            if hasattr(model, 'encode_image'):
-                features = model.encode_image(images)
-            else:
-                # 兼容原始 CLIP-ReID 模型
-                features = model(x=images)
-            
+            # 提取特征 (兼容 build_transformer 模型)
+            # model.eval() 时返回 concat(feat, feat_proj) -> [B, 1280]
+            features = model(x=images)
             features = F.normalize(features, p=2, dim=-1)
             
             all_features.append(features.cpu())
-            all_pids.extend(batch['pids'].numpy())
+            all_pids.extend(batch['labels'].numpy())
             all_camids.extend(batch['camids'].numpy())
-            all_paths.extend(batch['image_paths'])
+            if 'image_paths' in batch:
+                all_paths.extend(batch['image_paths'])
+            else:
+                all_paths.extend([''] * images.shape[0])
     
     all_features = torch.cat(all_features, dim=0)
     all_pids = np.array(all_pids)
@@ -124,18 +124,12 @@ def extract_text_features(
             else:
                 input_ids = text_tokens.to(device)
             
-            # 提取特征
-            if hasattr(model, 'encode_text'):
-                features = model.encode_text(input_ids)
-            elif hasattr(model, 'text_encoder'):
-                features = model.text_encoder(input_ids)
-            else:
-                raise ValueError("Model does not have text encoding capability")
-            
-            features = F.normalize(features, p=2, dim=-1)
+            # 提取特征 (使用 model 的 get_text_tokens 模式)
+            features = model(get_text_tokens=True, text_tokens=input_ids)
+            features = F.normalize(features.float(), p=2, dim=-1)
             
             all_features.append(features.cpu())
-            all_pids.extend(batch['pids'].numpy())
+            all_pids.extend(batch['labels'].numpy())
             all_texts.extend(batch['texts'])
     
     all_features = torch.cat(all_features, dim=0)
@@ -397,28 +391,54 @@ def main():
     cfg.freeze()
     
     # 2. 准备数据
-    from datasets.text_reid_dataset import build_text_reid_dataloaders
+    from datasets.text_reid_dataset import TextReIDDataset, TextReIDCollator
+    from model.clip import clip
+    import torchvision.transforms as T
     
-    # 我们需要一个分词器，这里假设使用 CLIP 的 simple_tokenizer
-    # 或者直接依赖模型内部的 tokenization
-    try:
-        from model.clip import clip
-        tokenizer = lambda text: clip.tokenize(text, truncate=True)
-    except ImportError:
-        print("Warning: CLIP tokenizer not found, using detailed error")
-        tokenizer = None
-
-    train_loader, query_loader, gallery_loader = build_text_reid_dataloaders(
-        train_image_dir=os.path.join(cfg.DATASETS.ROOT_DIR, 'Market-1501-v15.09.15', 'bounding_box_train'), # 仅占位，评估不需要train
-        train_annotation='', # 占位
-        query_image_dir=args.query_image_dir,
-        query_annotation=args.query_annotation,
-        gallery_image_dir=args.gallery_image_dir,
-        gallery_annotation=args.gallery_annotation,
+    tokenizer = lambda text: clip.tokenize(text, truncate=True)
+    
+    # Gallery transforms (no augmentation)
+    eval_transforms = T.Compose([
+        T.Resize(cfg.INPUT.SIZE_TEST, interpolation=3),
+        T.ToTensor(),
+        T.Normalize(mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD),
+    ])
+    
+    # Build gallery dataset from query + gallery images
+    # For text-to-image evaluation, we use text as query and images as gallery
+    gallery_dataset = TextReIDDataset(
+        image_dir=args.gallery_image_dir,
+        annotation_file=args.gallery_annotation,
+        transform=eval_transforms,
+        mode='test'
+    )
+    
+    gallery_collator = TextReIDCollator(tokenizer=tokenizer)
+    gallery_loader = DataLoader(
+        gallery_dataset,
         batch_size=args.batch_size,
+        shuffle=False,
         num_workers=cfg.DATALOADER.NUM_WORKERS,
-        tokenizer=tokenizer,
-        use_identity_sampler=False
+        collate_fn=gallery_collator,
+        pin_memory=True
+    )
+    
+    # Query dataset (same images but we use text features)
+    query_dataset = TextReIDDataset(
+        image_dir=args.query_image_dir,
+        annotation_file=args.query_annotation,
+        transform=eval_transforms,
+        mode='test'
+    )
+    
+    query_collator = TextReIDCollator(tokenizer=tokenizer)
+    query_loader = DataLoader(
+        query_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=cfg.DATALOADER.NUM_WORKERS,
+        collate_fn=query_collator,
+        pin_memory=True
     )
     
     # 3. 构建模型
