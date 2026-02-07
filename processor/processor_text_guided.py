@@ -8,8 +8,44 @@ from utils.meter import AverageMeter
 from utils.metrics import R1_mAP_eval
 
 
+def _build_text_loss(cfg):
+    """Build cross-modal text loss for Stage 2 based on config."""
+    loss_type = getattr(cfg.MODEL, 'TEXT_LOSS_TYPE', 'none')
+    if loss_type == 'none':
+        return None, loss_type
+    
+    from loss.cross_modal_loss import (
+        CrossModalContrastiveLoss, TextImageTripletLoss, 
+        CMPMLoss, TextImageMatchingLoss
+    )
+    
+    temperature = getattr(cfg.MODEL, 'TEXT_TEMPERATURE', 0.07)
+    margin = getattr(cfg.SOLVER, 'MARGIN', 0.3)
+    
+    if loss_type == 'contrastive':
+        loss_fn = CrossModalContrastiveLoss(
+            temperature=temperature, symmetric=True, learnable_temperature=True
+        )
+    elif loss_type == 'triplet':
+        loss_fn = TextImageTripletLoss(margin=margin, hard_mining=True)
+    elif loss_type == 'cmpm':
+        loss_fn = CMPMLoss()
+    elif loss_type == 'combined':
+        loss_fn = TextImageMatchingLoss(
+            temperature=temperature,
+            margin=margin,
+            contrastive_weight=getattr(cfg.MODEL, 'TEXT_CONTRASTIVE_WEIGHT', 1.0),
+            triplet_weight=getattr(cfg.MODEL, 'TEXT_TRIPLET_WEIGHT', 0.5),
+            cmpm_weight=getattr(cfg.MODEL, 'TEXT_CMPM_WEIGHT', 0.5),
+        )
+    else:
+        raise ValueError(f"Unknown TEXT_LOSS_TYPE: {loss_type}")
+    
+    return loss_fn, loss_type
+
+
 def do_train_text_guided(cfg, model, center_criterion, train_loader, val_loader, optimizer, optimizer_center, scheduler, loss_func, num_query, local_rank):
-    """Stage 2: 分类训练"""
+    """Stage 2: 分类训练 (with optional cross-modal text loss)"""
     log_period = cfg.SOLVER.STAGE2.LOG_PERIOD
     checkpoint_period = cfg.SOLVER.STAGE2.CHECKPOINT_PERIOD
     eval_period = cfg.SOLVER.STAGE2.EVAL_PERIOD
@@ -19,6 +55,15 @@ def do_train_text_guided(cfg, model, center_criterion, train_loader, val_loader,
 
     logger = logging.getLogger("transreid.train")
     logger.info('Start Stage 2: Text-Guided Classification Training')
+    
+    # Build cross-modal loss for Stage 2
+    text_loss_fn, text_loss_type = _build_text_loss(cfg)
+    text_loss_weight = getattr(cfg.MODEL, 'TEXT_LOSS_WEIGHT', 1.0)
+    if text_loss_fn is not None:
+        text_loss_fn = text_loss_fn.to(device)
+        logger.info(f"[Stage2] Cross-modal text loss: {text_loss_type}, weight={text_loss_weight}")
+    else:
+        logger.info("[Stage2] No additional cross-modal text loss (using I2T from make_loss only)")
     
     if device:
         model.to(device)
@@ -51,11 +96,21 @@ def do_train_text_guided(cfg, model, center_criterion, train_loader, val_loader,
             # 计算损失
             i2t_logits = None
             text_tokens = batch.get('text_tokens')
+            text_features = None
             if text_tokens is not None:
                 text_tokens = text_tokens.to(device)
                 text_features = model(get_text_tokens=True, text_tokens=text_tokens)
                 i2t_logits = image_features @ text_features.t()
             loss = loss_func(score, feat, target, target_cam, i2t_logits)
+            
+            # Additional cross-modal text loss (contrastive / triplet / cmpm / combined)
+            if text_loss_fn is not None and text_features is not None:
+                cm_loss_out = text_loss_fn(text_features, image_features, target)
+                if isinstance(cm_loss_out, dict):
+                    cm_loss = cm_loss_out['total']
+                else:
+                    cm_loss = cm_loss_out
+                loss = loss + text_loss_weight * cm_loss
             
             # 反向传播
             optimizer.zero_grad()
