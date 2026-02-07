@@ -62,6 +62,20 @@ _C.MODEL.SIE_COE = 3.0
 _C.MODEL.SIE_CAMERA = False
 _C.MODEL.SIE_VIEW = False
 
+# Text-Guided ReID settings
+# Text encoder type: 'clip_native' (CLIP encode_text_tokens) or 'query_encoder' (TextQueryEncoder with attention)
+_C.MODEL.TEXT_ENCODER_TYPE = 'clip_native'
+# Temperature for cross-modal contrastive loss
+_C.MODEL.TEXT_TEMPERATURE = 0.07
+# Cross-modal loss type for Stage 2: 'none', 'contrastive', 'triplet', 'cmpm', 'combined'
+_C.MODEL.TEXT_LOSS_TYPE = 'none'
+# Weight for the cross-modal text loss in Stage 2
+_C.MODEL.TEXT_LOSS_WEIGHT = 1.0
+# Weights for combined text loss sub-components
+_C.MODEL.TEXT_CONTRASTIVE_WEIGHT = 1.0
+_C.MODEL.TEXT_TRIPLET_WEIGHT = 0.5
+_C.MODEL.TEXT_CMPM_WEIGHT = 0.5
+
 # -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------

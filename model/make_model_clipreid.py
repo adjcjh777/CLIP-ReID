@@ -109,6 +109,16 @@ class build_transformer(nn.Module):
         self.text_encoder = TextEncoder(clip_model)
         self.token_embedding = clip_model.token_embedding
 
+        # Text-Guided ReID: optional TextQueryEncoder
+        self.text_encoder_type = getattr(cfg.MODEL, 'TEXT_ENCODER_TYPE', 'clip_native')
+        if self.text_encoder_type == 'query_encoder':
+            from .text_query_encoder import TextQueryEncoder
+            self.text_query_encoder = TextQueryEncoder(clip_model, embed_dim=self.in_planes_proj)
+            print(f"[TextGuided] Using TextQueryEncoder (attention-based, dim={self.in_planes_proj})")
+        else:
+            self.text_query_encoder = None
+            print(f"[TextGuided] Using CLIP native text encoding")
+
     def encode_text_tokens(self, text_tokens):
         """
         Encode raw text tokens (from clip.tokenize) into CLIP text features.
@@ -125,7 +135,10 @@ class build_transformer(nn.Module):
 
     def forward(self, x = None, label=None, get_image = False, get_text = False, text_tokens=None, get_text_tokens=False, cam_label= None, view_label=None):
         if get_text_tokens == True:
-            return self.encode_text_tokens(text_tokens)
+            if self.text_query_encoder is not None:
+                return self.text_query_encoder(text_tokens)
+            else:
+                return self.encode_text_tokens(text_tokens)
         if get_text == True:
             prompts = self.prompt_learner(label) 
             text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts)
