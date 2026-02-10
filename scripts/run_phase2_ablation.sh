@@ -17,7 +17,7 @@
 
 set -e
 
-PYTHON="/root/miniconda3/bin/python"
+PYTHON="/root/CLIP-ReID/.venv-5090/bin/python"
 PROJECT_DIR="/root/CLIP-ReID"
 CONFIG="configs/person/vit_clipreid.yml"
 ANNOTATION="annotations/market1501_train.json"
@@ -25,8 +25,8 @@ DATASETS_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
 OUTPUT_BASE="/root/autodl-tmp/CLIP_REID/OUTPUT/phase2"
 XLSX_PATH="${PROJECT_DIR}/docs/experiments/phase2_ablation_results.xlsx"
 
-# Common overrides
-COMMON_OPTS="DATASETS.NAMES market1501 DATASETS.ROOT_DIR ${DATASETS_ROOT} SOLVER.SEED 1234"
+# Common overrides — batch=32, Stage1=60ep 与成功的 text-guided 配置一致
+COMMON_OPTS="DATASETS.NAMES market1501 DATASETS.ROOT_DIR ${DATASETS_ROOT} SOLVER.SEED 1234 SOLVER.STAGE1.IMS_PER_BATCH 32 SOLVER.STAGE1.MAX_EPOCHS 60 SOLVER.STAGE1.CHECKPOINT_PERIOD 60 SOLVER.STAGE2.IMS_PER_BATCH 32"
 
 cd "$PROJECT_DIR"
 
@@ -73,7 +73,7 @@ run_B0() {
 run_B2() {
     local EXP_ID="B2"
     local OUT="${OUTPUT_BASE}/B2_crossmodal_contrastive"
-    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_120.pth"
+    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_60.pth"
 
     if [ ! -f "$S1_CKPT" ]; then
         echo "ERROR: B0 Stage1 checkpoint not found at $S1_CKPT. Run B0 first."
@@ -103,7 +103,7 @@ run_B2() {
 run_B3a() {
     local EXP_ID="B3a"
     local OUT="${OUTPUT_BASE}/B3a_i2t_w0.2"
-    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_120.pth"
+    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_60.pth"
 
     if [ ! -f "$S1_CKPT" ]; then
         echo "ERROR: B0 Stage1 checkpoint not found. Run B0 first."
@@ -132,7 +132,7 @@ run_B3a() {
 run_B3b() {
     local EXP_ID="B3b"
     local OUT="${OUTPUT_BASE}/B3b_i2t_w0.5"
-    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_120.pth"
+    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_60.pth"
 
     if [ ! -f "$S1_CKPT" ]; then
         echo "ERROR: B0 Stage1 checkpoint not found. Run B0 first."
@@ -161,7 +161,7 @@ run_B3b() {
 run_B3c() {
     local EXP_ID="B3c"
     local OUT="${OUTPUT_BASE}/B3c_i2t_w1.0"
-    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_120.pth"
+    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_60.pth"
 
     if [ ! -f "$S1_CKPT" ]; then
         echo "ERROR: B0 Stage1 checkpoint not found. Run B0 first."
@@ -190,7 +190,7 @@ run_B3c() {
 run_B3d() {
     local EXP_ID="B3d"
     local OUT="${OUTPUT_BASE}/B3d_i2t_w2.0"
-    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_120.pth"
+    local S1_CKPT="${OUTPUT_BASE}/B0_baseline_clip_native/ViT-B-16_stage1_60.pth"
 
     if [ ! -f "$S1_CKPT" ]; then
         echo "ERROR: B0 Stage1 checkpoint not found. Run B0 first."
