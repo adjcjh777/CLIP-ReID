@@ -43,6 +43,12 @@ class TextReIDDataset(Dataset):
         
         print(f"Loaded {len(self.data)} images from {image_dir}")
         
+        # CamID 重映射为 0-based (保持与原始 dataloader 一致)
+        unique_camids = sorted(list(set(d['camid'] for d in self.data)))
+        camid_to_zero_based = {c: i for i, c in enumerate(unique_camids)}
+        for d in self.data:
+            d['camid'] = camid_to_zero_based[d['camid']]
+        
         # PID 重映射 (0 ~ N-1)
         unique_pids = sorted(list(set(d['pid'] for d in self.data)))
         self.pid_to_label = {pid: i for i, pid in enumerate(unique_pids)}
@@ -98,7 +104,26 @@ class TextReIDCollator:
         }
         
         if self.tokenizer:
-            text_tokens = self.tokenizer(texts).squeeze(1)  # [B, 77]
+            # 截断过长文本以适应 CLIP 的 77 token 上下文限制
+            # 简单方法：限制文本字符长度（77 tokens ≈ ~200 字符）
+            truncated_texts = []
+            for t in texts:
+                if len(t) > 200:
+                    # 在最后一个完整句子或逗号处截断
+                    t_trunc = t[:200]
+                    for sep in ['. ', ', ', ' ']:
+                        last_sep = t_trunc.rfind(sep)
+                        if last_sep > 50:
+                            t_trunc = t_trunc[:last_sep + (2 if sep == '. ' else 1)].rstrip()
+                            break
+                    t = t_trunc
+                truncated_texts.append(t)
+            try:
+                text_tokens = self.tokenizer(truncated_texts).squeeze(1)  # [B, 77]
+            except RuntimeError:
+                # 如果仍然超长，做更激进的截断
+                safe_texts = [t[:150] for t in truncated_texts]
+                text_tokens = self.tokenizer(safe_texts).squeeze(1)
             res['text_tokens'] = text_tokens
             
         return res

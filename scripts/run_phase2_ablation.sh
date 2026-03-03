@@ -8,6 +8,7 @@
 #   - B2, B3a-B3d = 复用 B0 的 Stage1 checkpoint → 仅 Stage2
 #   - B1 = query_encoder → 需完整 Stage1+Stage2
 #   - B4 = 三者最优组合 → 需人工决定后运行
+#   - B5 = B3a最优(I2T=0.2) + SIE + OLP → 需完整 Stage1+Stage2
 #
 # 用法:
 #   bash scripts/run_phase2_ablation.sh [experiment_id]
@@ -17,12 +18,17 @@
 
 set -e
 
-PYTHON="/root/CLIP-ReID/.venv-5090/bin/python"
-PROJECT_DIR="/root/CLIP-ReID"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON="${PROJECT_DIR}/.venv-5090/bin/python"
+if [ ! -x "$PYTHON" ]; then
+  PYTHON="python"
+fi
 CONFIG="configs/person/vit_clipreid.yml"
 ANNOTATION="annotations/market1501_train.json"
-DATASETS_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
-OUTPUT_BASE="/root/autodl-tmp/CLIP_REID/OUTPUT/phase2"
+DATASETS_ROOT="${CLIPREID_DATA_ROOT:-${PROJECT_DIR}/DATASETS}"
+OUTPUT_ROOT="${CLIPREID_OUTPUT_ROOT:-${PROJECT_DIR}/OUTPUT}"
+OUTPUT_BASE="${OUTPUT_ROOT}/phase2"
 XLSX_PATH="${PROJECT_DIR}/docs/experiments/phase2_ablation_results.xlsx"
 
 # Common overrides — batch=32, Stage1=60ep 与成功的 text-guided 配置一致
@@ -215,6 +221,32 @@ run_B3d() {
     update_xlsx "$EXP_ID" "completed" "$OUT"
 }
 
+# ---------- B5: B3a最优 + SIE + OLP (完整 Stage1+Stage2) ----------
+run_B5() {
+    local EXP_ID="B5"
+    local OUT="${OUTPUT_BASE}/B5_i2t_w0.2_sie_olp"
+
+    log_msg "Starting ${EXP_ID}: I2T=0.2 + SIE_CAMERA + OLP (STRIDE_SIZE=[12,12]), 完整训练"
+    update_xlsx "$EXP_ID" "running" "$OUT"
+
+    $PYTHON train_text_reid.py \
+        --config_file $CONFIG \
+        --annotation_file $ANNOTATION \
+        $COMMON_OPTS \
+        OUTPUT_DIR "$OUT" \
+        MODEL.TEXT_ENCODER_TYPE clip_native \
+        MODEL.TEXT_LOSS_TYPE none \
+        MODEL.I2T_LOSS_WEIGHT 0.2 \
+        MODEL.SIE_CAMERA True \
+        MODEL.SIE_COE 3.0 \
+        MODEL.STRIDE_SIZE "[12, 12]" \
+        INPUT.SIZE_TRAIN "[256, 128]" \
+        INPUT.SIZE_TEST "[256, 128]"
+
+    log_msg "${EXP_ID} completed"
+    update_xlsx "$EXP_ID" "completed" "$OUT"
+}
+
 # ---------- B1: TextQueryEncoder (完整 Stage1+Stage2) ----------
 run_B1() {
     local EXP_ID="B1"
@@ -247,8 +279,9 @@ case "$EXPERIMENT" in
     B3c)  run_B3c ;;
     B3d)  run_B3d ;;
     B1)   run_B1 ;;
+    B5)   run_B5 ;;
     all)
-        log_msg "Running ALL Phase 2 experiments (B0→B2→B3a→B3b→B3c→B3d→B1)"
+        log_msg "Running ALL Phase 2 experiments (B0→B2→B3a→B3b→B3c→B3d→B1→B5)"
         run_B0
         run_B2
         run_B3a
@@ -256,11 +289,12 @@ case "$EXPERIMENT" in
         run_B3c
         run_B3d
         run_B1
+        run_B5
         log_msg "ALL Phase 2 experiments completed!"
         ;;
     *)
         echo "Unknown experiment: $EXPERIMENT"
-        echo "Usage: $0 [B0|B1|B2|B3a|B3b|B3c|B3d|all]"
+        echo "Usage: $0 [B0|B1|B2|B3a|B3b|B3c|B3d|B5|all]"
         exit 1
         ;;
 esac

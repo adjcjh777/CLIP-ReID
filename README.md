@@ -19,6 +19,35 @@ pip install ftfy
 pip install regex
 ```
 
+### Machine Bootstrap (for this repo)
+
+If you migrate this repository to a new machine, run:
+
+```bash
+bash scripts/init_machine.sh
+```
+
+It will:
+1. Create `.venv-5090` under the repo.
+2. Install missing Python dependencies listed in `requirements/base.txt`.
+3. Prepare default data/output paths under current repo:
+   - `./DATASETS`
+   - `./OUTPUT`
+
+Then use:
+
+```bash
+.venv-5090/bin/python train_clipreid.py --help
+```
+
+Optional: customize dataset/output roots before bootstrap:
+
+```bash
+export CLIPREID_DATA_ROOT=/path/to/your/datasets
+export CLIPREID_OUTPUT_ROOT=/path/to/your/outputs
+bash scripts/init_machine.sh
+```
+
 ### Prepare Dataset
 
 Download the datasets ([Market-1501](https://drive.google.com/file/d/0B8-rUzbwVRk0c054eEozWG9COHM/view), [MSMT17](https://arxiv.org/abs/1711.08565), [DukeMTMC-reID](https://arxiv.org/abs/1609.01775), [Occluded-Duke](https://github.com/lightas/Occluded-DukeMTMC-Dataset), [VehicleID](https://www.pkuml.org/resources/pku-vehicleid.html), [VeRi-776](https://github.com/JDAI-CV/VeRidataset)), and then unzip them to `your_dataset_dir`.
@@ -100,4 +129,3 @@ If you use this code for your research, please cite
   year={2022}
 }
 ```
-

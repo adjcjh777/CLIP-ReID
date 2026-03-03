@@ -55,9 +55,10 @@ def generate_msmt17_annotations(train_dir, output_file):
     print(f"Saved to {output_file}")
 
 if __name__ == '__main__':
+    project_dir = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_dir', default='/root/autodl-tmp/CLIP_REID/DATASETS/MSMT17/train')
-    parser.add_argument('--output_file', default='annotations/msmt17_train.json')
+    parser.add_argument('--train_dir', default=str(project_dir / 'DATASETS' / 'MSMT17' / 'train'))
+    parser.add_argument('--output_file', default=str(project_dir / 'annotations' / 'msmt17_train.json'))
     args = parser.parse_args()
     
     generate_msmt17_annotations(args.train_dir, args.output_file)

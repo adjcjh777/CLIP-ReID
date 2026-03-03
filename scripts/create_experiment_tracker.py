@@ -3,6 +3,10 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from datetime import datetime
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_DATA_ROOT = str(PROJECT_DIR / "DATASETS")
 
 wb = openpyxl.Workbook()
 
@@ -185,7 +189,7 @@ ws3['A1'].font = Font(bold=True, size=13, color="2F5496")
 
 config_items = [
     ("数据集", "Market-1501"),
-    ("数据路径", "/root/autodl-tmp/CLIP_REID/DATASETS"),
+    ("数据路径", DEFAULT_DATA_ROOT),
     ("标注文件", "annotations/market1501_train.json"),
     ("模型", "ViT-B-16"),
     ("SIZE_TRAIN", "[256, 128]"),
@@ -201,7 +205,7 @@ config_items = [
     ("TRIPLET_LOSS_WEIGHT", "1.0"),
     ("I2T_LOSS_WEIGHT", "1.0 (default, varies in B3)"),
     ("TEXT_TEMPERATURE", "0.07"),
-    ("GPU", "RTX 4090 (AutoDL)"),
+    ("GPU", "本地 GPU"),
     ("Python 环境", "miniconda3 base, PyTorch 1.10+cu113"),
     ("创建时间", datetime.now().strftime("%Y-%m-%d %H:%M")),
 ]
@@ -213,8 +217,7 @@ for row_idx, (key, val) in enumerate(config_items, 3):
     ws3.column_dimensions['B'].width = 45
 
 # Save
-output_path = "/root/CLIP-ReID/docs/experiments/phase2_ablation_results.xlsx"
-import os
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
+output_path = PROJECT_DIR / "docs/experiments/phase2_ablation_results.xlsx"
+output_path.parent.mkdir(parents=True, exist_ok=True)
 wb.save(output_path)
 print(f"Saved to {output_path}")

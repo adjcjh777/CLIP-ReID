@@ -72,7 +72,8 @@ def do_train_text_guided(cfg, model, center_criterion, train_loader, val_loader,
 
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
-    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
+    evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM,
+                            reranking=cfg.TEST.RE_RANKING)
 
     for epoch in range(1, epochs + 1):
         start_time = time.time()

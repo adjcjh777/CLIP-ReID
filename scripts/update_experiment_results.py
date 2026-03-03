@@ -68,6 +68,7 @@ def parse_metrics_from_log(output_dir):
 def parse_timestamps_from_log(output_dir):
     """Extract start and end timestamps from log files."""
     log_files = glob.glob(os.path.join(output_dir, "*.log"))
+    log_files.extend(glob.glob(os.path.join(output_dir, "*.txt")))
     
     all_times = []
     for log_file in log_files:
@@ -112,14 +113,25 @@ EXP_ROW_MAP = {
     "B3d": 9,
     "B1": 10,
     "B4": 11,
+    "B5": 12,
 }
+
+
+def _find_row_by_exp_id(ws, exp_id):
+    for row in range(1, ws.max_row + 1):
+        value = ws.cell(row=row, column=1).value
+        if str(value).strip() == exp_id:
+            return row
+    return None
 
 
 def update_xlsx(xlsx_path, exp_id, status, output_dir):
     wb = load_workbook(xlsx_path)
     ws = wb["Phase2 Ablation"]
     
-    row = EXP_ROW_MAP.get(exp_id)
+    row = _find_row_by_exp_id(ws, exp_id)
+    if row is None:
+        row = EXP_ROW_MAP.get(exp_id)
     if row is None:
         print(f"Unknown experiment ID: {exp_id}")
         return
@@ -139,6 +151,11 @@ def update_xlsx(xlsx_path, exp_id, status, output_dir):
         if output_dir and os.path.isdir(output_dir):
             metrics = parse_metrics_from_log(output_dir)
             start_time, end_time = parse_timestamps_from_log(output_dir)
+
+            start_cell = ws.cell(row=row, column=10).value
+            if start_time and not isinstance(start_cell, datetime):
+                ws.cell(row=row, column=10, value=start_time)
+                ws.cell(row=row, column=10).number_format = 'YYYY-MM-DD HH:MM'
             
             if end_time:
                 ws.cell(row=row, column=11, value=end_time)
@@ -146,6 +163,12 @@ def update_xlsx(xlsx_path, exp_id, status, output_dir):
             else:
                 ws.cell(row=row, column=11, value=datetime.now())
                 ws.cell(row=row, column=11).number_format = 'YYYY-MM-DD HH:MM'
+
+            start_cell = ws.cell(row=row, column=10).value
+            end_cell = ws.cell(row=row, column=11).value
+            if isinstance(start_cell, datetime) and isinstance(end_cell, datetime):
+                ws.cell(row=row, column=12, value=(end_cell - start_cell).total_seconds() / 3600)
+                ws.cell(row=row, column=12).number_format = '0.00'
             
             if metrics.get('mAP') is not None:
                 ws.cell(row=row, column=13, value=metrics['mAP'])

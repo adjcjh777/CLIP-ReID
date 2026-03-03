@@ -7,12 +7,14 @@ set -e
 DATASET=${1:-"market1501"}
 GPU_ID=${2:-0}
 
-# 输出目录
-OUTPUT_DIR="/root/autodl-tmp/CLIP_REID/OUTPUT/multi_granularity_v2/${DATASET}"
-TB_LOG_DIR="/root/autodl-tmp/CLIP_REID/OUTPUT/multi_granularity_v2/tensorboard/${DATASET}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DATA_ROOT="${CLIPREID_DATA_ROOT:-${PROJECT_DIR}/DATASETS}"
+OUTPUT_ROOT="${CLIPREID_OUTPUT_ROOT:-${PROJECT_DIR}/OUTPUT}"
 
-# 数据集路径
-DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
+# 输出目录
+OUTPUT_DIR="${OUTPUT_ROOT}/multi_granularity_v2/${DATASET}"
+TB_LOG_DIR="${OUTPUT_ROOT}/multi_granularity_v2/tensorboard/${DATASET}"
 
 echo "=============================================="
 echo "Multi-Granularity Training with Diversity Loss"
@@ -25,6 +27,8 @@ echo ""
 # 创建输出目录
 mkdir -p ${OUTPUT_DIR}
 mkdir -p ${TB_LOG_DIR}
+
+cd "${PROJECT_DIR}"
 
 # 训练命令
 CUDA_VISIBLE_DEVICES=${GPU_ID} python train_clipreid.py \

@@ -31,22 +31,35 @@ from typing import List, Dict, Optional
 
 
 class ImageDataset(Dataset):
-    """简单的图像数据集"""
+    """简单的图像数据集，支持平铺和子目录两种结构"""
     
-    def __init__(self, image_dir: str, processor=None):
+    def __init__(self, image_dir: str, processor=None, dataset_type: str = 'auto'):
         self.image_dir = Path(image_dir)
         self.processor = processor
+        self.dataset_type = dataset_type  # 'market1501', 'msmt17', or 'auto'
         
-        # 收集所有图像
-        self.image_paths = sorted(list(self.image_dir.glob("*.jpg")))
+        # 收集所有图像（先递归查找，再回退到平铺）
+        self.image_paths = sorted(list(self.image_dir.rglob("*.jpg")))
         
         # 过滤掉无效图像（如 -1 开头的 junk 图像）
         self.image_paths = [
             p for p in self.image_paths 
-            if not p.name.startswith('-1') and not p.name.startswith('0000')
+            if not p.name.startswith('-1')
         ]
         
-        print(f"Found {len(self.image_paths)} valid images in {image_dir}")
+        # 自动检测数据集类型
+        if self.dataset_type == 'auto':
+            # MSMT17 文件名格式: {pid}_{imgid}_{camid}_{scene}_{seq}_{frame}[_ex].jpg
+            # Market1501 文件名格式: {pid}_c{camid}s{seqid}_{frame}_{bbox}.jpg
+            sample_name = self.image_paths[0].name if self.image_paths else ''
+            if 'morning' in sample_name or 'afternoon' in sample_name or 'noon' in sample_name:
+                self.dataset_type = 'msmt17'
+            elif '_c' in sample_name and 's' in sample_name:
+                self.dataset_type = 'market1501'
+            else:
+                self.dataset_type = 'market1501'  # default
+        
+        print(f"Found {len(self.image_paths)} valid images in {image_dir} (type: {self.dataset_type})")
     
     def __len__(self):
         return len(self.image_paths)
@@ -64,8 +77,15 @@ class ImageDataset(Dataset):
         # 解析 PID 和 CamID
         img_name = img_path.name
         try:
-            pid = int(img_name.split('_')[0])
-            camid = int(img_name.split('_')[1][1])
+            if self.dataset_type == 'msmt17':
+                # MSMT17: {pid}_{imgid}_{camid}_{scene}_{seq}_{frame}[_ex].jpg
+                parts = img_name.split('_')
+                pid = int(parts[0])
+                camid = int(parts[2])
+            else:
+                # Market1501: {pid}_c{camid}s{seqid}_{frame}_{bbox}.jpg
+                pid = int(img_name.split('_')[0])
+                camid = int(img_name.split('_')[1][1])
         except:
             pid = -1
             camid = 0
@@ -122,6 +142,7 @@ def generate_captions(
     device: str = "cuda",
     prompt: str = None,
     max_images: Optional[int] = None,
+    dataset_type: str = 'auto',
 ):
     """
     使用 BLIP-2 生成图像描述
@@ -147,7 +168,7 @@ def generate_captions(
     print("Model loaded successfully!")
     
     # 创建数据集
-    dataset = ImageDataset(image_dir, processor)
+    dataset = ImageDataset(image_dir, processor, dataset_type=dataset_type)
     if max_images is not None:
         dataset.image_paths = dataset.image_paths[:max_images]
     dataloader = DataLoader(
@@ -159,12 +180,12 @@ def generate_captions(
     )
     
     # 用于 ReID 任务的提示词
+    # BLIP-2 对 Q&A 格式效果最好，避免使用长描述性提示
     if prompt is None:
-        prompt = (
-            "Describe this person's appearance in detail, including their "
-            "gender, age, clothing colors, clothing style, and any accessories "
-            "they are carrying."
-        )
+        if use_blip2:
+            prompt = "Question: Describe this person's clothing, accessories, gender, and age in detail. Answer:"
+        else:
+            prompt = "a photo of a person wearing"
     
     print(f"Using prompt: {prompt}")
     print()
@@ -206,8 +227,11 @@ def generate_captions(
         ):
             # 清理生成的文本
             text = text.strip()
+            # 对于 Q&A 格式，提取 Answer 部分
+            if 'Answer:' in text:
+                text = text.split('Answer:')[-1].strip()
             # 移除可能的重复提示词
-            if text.startswith(prompt):
+            elif text.startswith(prompt):
                 text = text[len(prompt):].strip()
             
             annotations[name] = {
@@ -338,8 +362,17 @@ def main():
                         help='Custom prompt for generation')
     parser.add_argument('--max_images', type=int, default=None,
                         help='Limit number of images for quick test')
+    parser.add_argument('--dataset_type', type=str, default='auto',
+                        choices=['auto', 'market1501', 'msmt17'],
+                        help='Dataset type for filename parsing (default: auto-detect)')
+    parser.add_argument('--gpu_id', type=int, default=None,
+                        help='Specific GPU to use (e.g. 0). Helps with multi-process sharing.')
     
     args = parser.parse_args()
+    
+    if args.gpu_id is not None:
+        import os
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_id)
     
     generate_captions(
         image_dir=args.image_dir,
@@ -348,7 +381,8 @@ def main():
         batch_size=args.batch_size,
         device=args.device,
         prompt=args.prompt,
-        max_images=args.max_images
+        max_images=args.max_images,
+        dataset_type=args.dataset_type
     )
 
 

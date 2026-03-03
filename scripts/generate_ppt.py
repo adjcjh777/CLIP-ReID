@@ -155,7 +155,8 @@ def create_presentation(output_path):
     print(f"Presentation saved to {output_path}")
 
 if __name__ == '__main__':
-    output_dir = "/root/ppt_workspace"
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    output_dir = os.path.join(project_dir, "OUTPUT", "ppt_workspace")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     create_presentation(os.path.join(output_dir, "Text_Guided_ReID_Summary_CN.pptx"))

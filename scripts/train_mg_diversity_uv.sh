@@ -21,10 +21,16 @@ DATASET=${1:-"market1501"}
 GPU_ID=${2:-0}
 
 # 路径配置
-PROJECT_ROOT="/root/CLIP-ReID"
-VENV_PATH="${PROJECT_ROOT}/.venv"
-DATA_ROOT="/root/autodl-tmp/CLIP_REID/DATASETS"
-OUTPUT_BASE="/root/autodl-tmp/CLIP_REID/OUTPUT/multi_granularity_v2"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [ -d "${PROJECT_ROOT}/.venv-5090" ]; then
+    VENV_PATH="${PROJECT_ROOT}/.venv-5090"
+else
+    VENV_PATH="${PROJECT_ROOT}/.venv"
+fi
+DATA_ROOT="${CLIPREID_DATA_ROOT:-${PROJECT_ROOT}/DATASETS}"
+OUTPUT_ROOT="${CLIPREID_OUTPUT_ROOT:-${PROJECT_ROOT}/OUTPUT}"
+OUTPUT_BASE="${OUTPUT_ROOT}/multi_granularity_v2"
 OUTPUT_DIR="${OUTPUT_BASE}/${DATASET}"
 TB_LOG_DIR="${OUTPUT_BASE}/tensorboard/${DATASET}"
 

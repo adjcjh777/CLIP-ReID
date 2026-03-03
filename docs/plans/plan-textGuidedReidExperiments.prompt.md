@@ -55,6 +55,13 @@
    - 预期：达到或超过 SIE+OLP 基线的 89.6% mAP
    - 预计耗时：~6 小时
 
+9b. **实验 B5：B3a 最优配置 + SIE + OLP** ✅
+   - 配置：`I2T_LOSS_WEIGHT=0.2` + `SIE_CAMERA=True` + `SIE_COE=3.0` + `STRIDE_SIZE=[12,12]`，完整 Stage1+Stage2 训练
+   - 动机：Phase 2 实验均未开启 SIE/OLP，原始 CLIP-ReID 基线的 89.6% mAP 包含 SIE+OLP，需验证 Text-Guided + SIE+OLP 的叠加效果
+   - **实际结果：mAP 88.8%, Rank-1 94.1%**（+1.6% mAP vs B3a，接近基线 89.6%）
+   - 实际耗时：~2.5 小时（RTX 5090）
+   - Checkpoint: `/root/autodl-tmp/CLIP_REID/OUTPUT/phase2/B5_i2t_w0.2_sie_olp/ViT-B-16_stage2_60.pth`
+
 ### 阶段 3：BLIP 标注生成与 MSMT17 验证（Day 11-16，~10h CPU + 30h GPU）
 
 10. **配置 BLIP-2 并为 MSMT17 生成文本标注**
@@ -63,14 +70,18 @@
     - 替换 annotations/msmt17_train.json 中的占位文本
     - 同时为 Market1501 也生成 BLIP 标注，用于消融对比（属性模板 vs BLIP 自然语言）
 
-11. **实验 C1：MSMT17 Text-Guided（BLIP 标注）**
-    - 用阶段 2 的最优配置训练 MSMT17
-    - 预期：当前 68.5% → 估计 72~74% mAP（接近基线 73.4%）
-    - 预计耗时：~10 小时（MSMT17 数据量更大）
+11. **实验 C1：MSMT17 Text-Guided（BLIP 标注）** ✅
+    - 用阶段 2 的最优配置（I2T=0.2, no SIE, stride [16,16]）训练 MSMT17
+    - **实际结果：mAP 68.1%, Rank-1 85.2%**（低于目标 72.0%，基线 73.4%）
+    - 分析：BLIP-2 对低分辨率监控图质量有限，文本截断损失语义，未加 SIE+OLP
+    - 实际耗时：~2.8 小时（RTX 5090，Stage1 82min + Stage2 90min）
+    - Checkpoint: `/root/autodl-tmp/CLIP_REID/OUTPUT/phase3/C1_msmt17_blip/ViT-B-16_stage2_60.pth`
 
-12. **实验 C2：Market1501 文本来源消融**
-    - 对比 Market1501 上属性模板文本 vs BLIP 生成文本的效果
-    - 预计耗时：~6 小时
+12. **实验 C2：Market1501 文本来源消融** 🔄
+    - 对比 Market1501 上属性模板文本（B3a）vs BLIP-2 生成文本的效果
+    - 配置：I2T=0.2, no SIE, stride [16,16]，annotations/market1501_train_blip.json
+    - 对照组：B3a（属性模板, mAP 87.2%, Rank-1 93.9%）
+    - 状态：运行中
 
 ### 阶段 4：跨模态损失消融与深层分析（Day 17-21，~20 GPU 小时）
 
@@ -100,12 +111,13 @@
 | B2 | + Stage2 CrossModal Loss | TEXT_LOSS_TYPE | 2 | 6h |
 | B3 | I2T 权重消融 ×4 | I2T_LOSS_WEIGHT | 2 | 24h |
 | B4 | 最优组合 | B1+B2+B3 best | 2 | 6h |
+| B5 | B3a最优 + SIE + OLP | SIE_CAMERA+STRIDE_SIZE | 2 | 3h |
 | C1 | MSMT17 + BLIP 标注 | dataset + annotation | 3 | 10h |
 | C2 | Market1501 文本来源消融 | attribute vs BLIP | 3 | 6h |
 | D1 | 跨模态损失类型消融 ×4 | loss type | 4 | 24h |
 | D2 | 多 seed 验证 ×3 | seed | 4 | 18h |
 
-**总计：~106 GPU 小时**（3090 约 ¥300-400 AutoDL 费用）
+**总计：~109 GPU 小时**（3090 约 ￥300-400 AutoDL 费用，RTX 5090 实际更快）
 
 ---
 
@@ -113,8 +125,26 @@
 
 - **阶段 1 验证**：代码修改后用 `python train_text_reid.py --config-file configs/person/vit_clipreid_market1501.yml` 干跑 2 epoch，确认 `TextQueryEncoder` 前向正常、损失计算无报错
 - **每组实验验证**：检查 test log 中 mAP / Rank-1 指标；对比前一实验确认单变量效果方向
-- **阶段 3 验证**：BLIP 生成后随机抽查 50 条标注质量，确认描述包含可辨别属性
-- **最终验证**：B4 最优组合的 Market1501 mAP ≥ 89.0%（对标 SIE+OLP 基线 89.6%）；MSMT17 mAP ≥ 72.0%（对标基线 73.4%）
+- **阶段 2 实际结果（RTX 5090, 2026-02-10）**：
+  | 实验 | 配置 | mAP | Rank-1 | 状态 |
+  |------|------|-----|--------|------|
+  | B0 | 对照基线 (clip_native, I2T=1.0) | 84.2% | 92.8% | ✅ |
+  | B1 | TextQueryEncoder | 86.5% | 93.9% | ✅ |
+  | B2 | +CrossModal contrastive (w=0.5) | 83.8% | 93.2% | ✅ |
+  | B3a | I2T=0.2 | **87.2%** | **93.9%** | ✅ 最优 |
+  | B3b | I2T=0.5 | 86.8% | 93.8% | ✅ |
+  | B3c | I2T=1.0 | 84.4% | 93.1% | ✅ |
+  | B3d | I2T=2.0 | 80.0% | 91.6% | ✅ |
+  | B5 | B3a + SIE + OLP | **88.8%** | **94.1%** | ✅ 全局最优 |
+- **关键发现**：I2T 权重越低效果越好（0.2 > 0.5 > 1.0 > 2.0）；CrossModal Loss 无效；TextQueryEncoder 有正向效果；B5 叠加 SIE+OLP 后达到 88.8% mAP（+1.6% vs B3a），接近原始基线 89.6%
+- **阶段 3 实际结果（RTX 5090, 2026-02-11）**：
+  | 实验 | 配置 | mAP | Rank-1 | 状态 |
+  |------|------|-----|--------|------|
+  | C1 | MSMT17 + BLIP-2 标注 (I2T=0.2, no SIE) | 68.1% | 85.2% | ✅ |
+  | C2 | Market1501 + BLIP-2 标注 (I2T=0.2, no SIE) | — | — | 🔄 运行中 |
+- **C1 分析**：MSMT17 BLIP 标注 68.1% mAP，低于目标 72.0%（基线 73.4%）。可能原因：(1) BLIP-2 对监控低分辨率图像的描述质量有限，存在重复/多人混淆；(2) 未加 SIE+OLP；(3) 文本截断损失部分语义信息。后续可尝试 C1 + SIE+OLP 组合。
+- **阶段 3 验证**：BLIP-2 Q&A 格式生成 MSMT17（32621条）和 Market1501（12936条）标注，质量经抽检良好
+- **最终验证**：B5 (Text-Guided + SIE+OLP) Market1501 mAP=88.8%（接近基线 89.6%，差距 0.8%）；MSMT17 需进一步调优
 
 ---
 
@@ -124,4 +154,4 @@
 - **Market1501 先行 → MSMT17 跟进**：Market1501 有高质量属性标注可直接验证机制有效性，MSMT17 需先解决标注问题
 - **阶段 2 的 I2T 权重消融选 4 个点**：{0.2, 0.5, 1.0, 2.0} 覆盖了从弱监督到强监督的范围，成本可控
 - **跨模态损失消融放在阶段 4**：先通过阶段 2 确定编码器和权重的最优配置，再叠加不同损失类型，避免搜索空间爆炸
-- **暂不做 SIE+Text-Guided 联合实验**：先证明 Text-Guided 本身的有效性，SIE 结合作为后续增量实验
+- **新增 B5 实验验证 SIE+OLP 叠加效果**：Phase 2 结果显示所有实验均未开启 SIE/OLP，而原始基线 89.6% 包含 SIE+OLP，因此在最优的 B3a (I2T=0.2, 87.2%) 基础上叠加 SIE+OLP，预期可达 89%+

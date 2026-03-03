@@ -7,24 +7,34 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DATASETS_ROOT="${CLIPREID_DATA_ROOT:-${PROJECT_DIR}/DATASETS}"
+OUTPUT_ROOT="${CLIPREID_OUTPUT_ROOT:-${PROJECT_DIR}/OUTPUT}"
+OUT_DIR="${OUTPUT_ROOT}/phase2/B0_baseline_clip_native"
+PYTHON="${PROJECT_DIR}/.venv-5090/bin/python"
+if [ ! -x "$PYTHON" ]; then
+  PYTHON="python"
+fi
+
 echo "============================================"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] B0 修正版训练开始"
 echo "修正内容: batch 64→32, Stage1 epoch 120→60"
 echo "============================================"
 
-cd /root/CLIP-ReID
+cd "$PROJECT_DIR"
 
-/root/miniconda3/bin/python train_text_reid.py \
+$PYTHON train_text_reid.py \
     --config_file configs/person/vit_clipreid.yml \
     --annotation_file annotations/market1501_train.json \
     DATASETS.NAMES market1501 \
-    DATASETS.ROOT_DIR /root/autodl-tmp/CLIP_REID/DATASETS \
+    DATASETS.ROOT_DIR "$DATASETS_ROOT" \
     SOLVER.SEED 1234 \
     SOLVER.STAGE1.IMS_PER_BATCH 32 \
     SOLVER.STAGE1.MAX_EPOCHS 60 \
     SOLVER.STAGE1.CHECKPOINT_PERIOD 60 \
     SOLVER.STAGE2.IMS_PER_BATCH 32 \
-    OUTPUT_DIR /root/autodl-tmp/CLIP_REID/OUTPUT/phase2/B0_baseline_clip_native \
+    OUTPUT_DIR "$OUT_DIR" \
     MODEL.TEXT_ENCODER_TYPE clip_native \
     MODEL.TEXT_LOSS_TYPE none \
     MODEL.I2T_LOSS_WEIGHT 1.0
@@ -34,7 +44,7 @@ EXIT_CODE=$?
 echo ""
 echo "============================================"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] B0 训练完成 (exit code: $EXIT_CODE)"
-echo "结果目录: /root/autodl-tmp/CLIP_REID/OUTPUT/phase2/B0_baseline_clip_native"
+echo "结果目录: $OUT_DIR"
 echo "============================================"
 
 # 训练完成后关机

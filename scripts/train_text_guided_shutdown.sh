@@ -6,10 +6,14 @@ DATASET=${1:-"market1501"}
 GPU_ID=${2:-0}
 CAPTION_SOURCE=${3:-"attribute"}  # attribute | blip
 
-OUTPUT_DIR="/root/autodl-tmp/CLIP_REID/OUTPUT/text_guided/${DATASET}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+OUTPUT_ROOT="${CLIPREID_OUTPUT_ROOT:-${PROJECT_DIR}/OUTPUT}"
+OUTPUT_DIR="${OUTPUT_ROOT}/text_guided/${DATASET}"
 LOG_FILE="${OUTPUT_DIR}/train_shutdown.log"
 
 mkdir -p "$OUTPUT_DIR"
+cd "$PROJECT_DIR"
 
 echo "=== Text-Guided ReID (auto-shutdown) ===" | tee "$LOG_FILE"
 echo "Dataset: $DATASET" | tee -a "$LOG_FILE"
