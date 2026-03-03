@@ -1,0 +1,7 @@
+yacs
+ftfy
+regex
+scikit-image
+python-pptx
+transformers
+accelerate
